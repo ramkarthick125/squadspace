@@ -25,7 +25,11 @@ interface VoiceState {
   leaveVoiceChannel: (currentUser: UserProfile) => void;
   toggleMute: () => void;
   toggleDeafen: () => void;
-  toggleScreenShare: (currentUser: UserProfile, preset?: ScreenSharePreset) => Promise<void>;
+  toggleScreenShare: (
+    currentUser: UserProfile,
+    preset?: ScreenSharePreset,
+    options?: { systemAudio?: boolean }
+  ) => Promise<void>;
   setSpeaking: (channelId: string, userId: string, isSpeaking: boolean) => void;
 }
 
@@ -296,13 +300,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     }
   },
 
-  toggleScreenShare: async (currentUser, preset) => {
+  toggleScreenShare: async (currentUser, preset, options) => {
     const { isScreenSharing, activeVoiceChannelId, participantsByChannel, streamQuality } = get();
     if (!activeVoiceChannelId) return;
 
     if (!isScreenSharing) {
       const selectedPreset = preset || streamQuality;
-      const stream = await webrtcManager.startScreenShare(selectedPreset);
+      const stream = await webrtcManager.startScreenShare(selectedPreset, options);
       if (!stream) return;
 
       const channelParticipants = participantsByChannel[activeVoiceChannelId] || [];

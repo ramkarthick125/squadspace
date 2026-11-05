@@ -8,62 +8,139 @@ export interface LiveKitConnectionDetails {
 export type VoiceEngineMode = 'p2p' | 'livekit';
 
 export type ScreenSharePreset =
+  | '1080p-60'
+  | '1080p-30'
+  | '1440p-60'
+  | '1440p-30'
+  | '720p-60'
+  | '720p-30'
+  | 'source-60'
   | 'bandwidth-saver'
   | 'balanced'
   | 'high-quality'
   | '2k-crisp'
   | '2k-gaming';
 
-export const SCREEN_SHARE_PRESETS: Record<
-  ScreenSharePreset,
-  {
-    name: string;
-    resolution: { width: number; height: number };
-    frameRate: number;
-    maxBitrate: number;
-    description: string;
-    tag: string;
-  }
-> = {
-  'bandwidth-saver': {
-    name: 'Bandwidth Saver (720p @ 15fps)',
-    resolution: { width: 1280, height: 720 },
-    frameRate: 15,
-    maxBitrate: 800_000,
-    description: 'Perfect for reading code or documents. Uses only ~360 MB/hr.',
-    tag: 'Low Data',
+export interface ScreenPresetConfig {
+  name: string;
+  resolution: { width: number; height: number };
+  frameRate: number;
+  maxBitrate: number;
+  description: string;
+  tag: string;
+  contentHint: 'motion' | 'detail';
+}
+
+export const SCREEN_SHARE_PRESETS: Record<ScreenSharePreset, ScreenPresetConfig> = {
+  '1080p-60': {
+    name: 'Full HD (1080p @ 60fps)',
+    resolution: { width: 1920, height: 1080 },
+    frameRate: 60,
+    maxBitrate: 10_000_000,
+    description: 'Crisp 1080p at ultra smooth 60 FPS. Best for fast-paced gaming.',
+    tag: '1080p 60FPS',
+    contentHint: 'motion',
   },
-  balanced: {
-    name: 'Balanced (720p @ 30fps)',
-    resolution: { width: 1280, height: 720 },
-    frameRate: 30,
-    maxBitrate: 1_500_000,
-    description: 'Great for casual gaming and video clips. Smooth & reliable.',
-    tag: 'Recommended',
-  },
-  'high-quality': {
+  '1080p-30': {
     name: 'Full HD (1080p @ 30fps)',
     resolution: { width: 1920, height: 1080 },
     frameRate: 30,
-    maxBitrate: 3_000_000,
-    description: 'Crisp 1080p stream for desktop and detailed gaming.',
-    tag: '1080p',
+    maxBitrate: 6_000_000,
+    description: 'Crisp Full HD stream with balanced bandwidth consumption.',
+    tag: '1080p 30FPS',
+    contentHint: 'detail',
+  },
+  '1440p-60': {
+    name: 'Ultra 2K Pro (1440p @ 60fps)',
+    resolution: { width: 2560, height: 1440 },
+    frameRate: 60,
+    maxBitrate: 18_000_000,
+    description: 'Supreme 2K QHD 60 FPS clarity for high-end monitors and esports.',
+    tag: '2K 60FPS',
+    contentHint: 'motion',
+  },
+  '1440p-30': {
+    name: 'Ultra 2K (1440p @ 30fps)',
+    resolution: { width: 2560, height: 1440 },
+    frameRate: 30,
+    maxBitrate: 12_000_000,
+    description: 'Razor-sharp text and code for software development and spreadsheets.',
+    tag: '2K Crisp',
+    contentHint: 'detail',
+  },
+  'source-60': {
+    name: 'Source Quality (4K @ 60fps)',
+    resolution: { width: 3840, height: 2160 },
+    frameRate: 60,
+    maxBitrate: 25_000_000,
+    description: 'Original native display stream without downsampling.',
+    tag: '4K Source',
+    contentHint: 'motion',
+  },
+  '720p-60': {
+    name: 'Standard HD (720p @ 60fps)',
+    resolution: { width: 1280, height: 720 },
+    frameRate: 60,
+    maxBitrate: 4_500_000,
+    description: 'Smooth 60 FPS stream optimized for lower bandwidth.',
+    tag: '720p 60FPS',
+    contentHint: 'motion',
+  },
+  '720p-30': {
+    name: 'Standard HD (720p @ 30fps)',
+    resolution: { width: 1280, height: 720 },
+    frameRate: 30,
+    maxBitrate: 2_500_000,
+    description: 'Lightweight stream for slower connections.',
+    tag: '720p 30FPS',
+    contentHint: 'detail',
+  },
+
+  // Backwards compatibility aliases
+  '2k-gaming': {
+    name: 'Ultra 2K Pro (1440p @ 60fps)',
+    resolution: { width: 2560, height: 1440 },
+    frameRate: 60,
+    maxBitrate: 18_000_000,
+    description: 'Supreme 2K QHD 60 FPS clarity.',
+    tag: '2K 60FPS',
+    contentHint: 'motion',
   },
   '2k-crisp': {
     name: 'Ultra 2K (1440p @ 30fps)',
     resolution: { width: 2560, height: 1440 },
     frameRate: 30,
-    maxBitrate: 5_000_000,
-    description: 'High-definition 2K resolution (2560x1440). Direct P2P recommended.',
-    tag: '2K QHD',
+    maxBitrate: 12_000_000,
+    description: 'Razor-sharp text and code.',
+    tag: '2K Crisp',
+    contentHint: 'detail',
   },
-  '2k-gaming': {
-    name: 'Ultra 2K Pro (1440p @ 60fps)',
-    resolution: { width: 2560, height: 1440 },
+  'high-quality': {
+    name: 'Full HD (1080p @ 60fps)',
+    resolution: { width: 1920, height: 1080 },
     frameRate: 60,
-    maxBitrate: 8_500_000,
-    description: 'Ultimate 2K 60fps stream for competitive gaming. Requires fast home upload.',
-    tag: '2K 60FPS',
+    maxBitrate: 10_000_000,
+    description: 'Crisp 1080p 60fps.',
+    tag: '1080p',
+    contentHint: 'motion',
+  },
+  balanced: {
+    name: 'Full HD (1080p @ 30fps)',
+    resolution: { width: 1920, height: 1080 },
+    frameRate: 30,
+    maxBitrate: 6_000_000,
+    description: 'Full HD balanced.',
+    tag: 'Recommended',
+    contentHint: 'detail',
+  },
+  'bandwidth-saver': {
+    name: 'Standard HD (720p @ 30fps)',
+    resolution: { width: 1280, height: 720 },
+    frameRate: 30,
+    maxBitrate: 2_500_000,
+    description: 'Lightweight stream.',
+    tag: 'Low Data',
+    contentHint: 'detail',
   },
 };
 
@@ -71,10 +148,6 @@ const livekitServerUrl = import.meta.env.VITE_LIVEKIT_URL || '';
 
 export const isLiveKitConfigured = Boolean(livekitServerUrl);
 
-/**
- * Request access token from Supabase Edge Function or backend endpoint.
- * This ensures the LiveKit API Secret is NEVER exposed to client browsers.
- */
 export async function getLiveKitToken(
   roomName: string,
   participantName: string,

@@ -187,20 +187,33 @@ class WebRTCManager {
   }
 
   /**
-   * Start real screen sharing with resolution preset (Supports 2K / 1440p)
+   * Start real screen sharing with advanced resolution and framerate settings
    */
-  async startScreenShare(presetKey: ScreenSharePreset = 'balanced'): Promise<MediaStream | null> {
-    const preset = SCREEN_SHARE_PRESETS[presetKey] || SCREEN_SHARE_PRESETS.balanced;
+  async startScreenShare(
+    presetKey: ScreenSharePreset = '1080p-60',
+    options?: { systemAudio?: boolean }
+  ): Promise<MediaStream | null> {
+    const preset =
+      SCREEN_SHARE_PRESETS[presetKey] ||
+      SCREEN_SHARE_PRESETS['1080p-60'] ||
+      SCREEN_SHARE_PRESETS.balanced;
 
     try {
+      // Clean modern displayMedia constraints: allows user to pick application window, tab or screen
       this.localScreenStream = await navigator.mediaDevices.getDisplayMedia({
         video: {
-          displaySurface: 'monitor',
           frameRate: { ideal: preset.frameRate, max: preset.frameRate },
           width: { ideal: preset.resolution.width, max: preset.resolution.width },
           height: { ideal: preset.resolution.height, max: preset.resolution.height },
         },
-        audio: true,
+        audio:
+          options?.systemAudio !== false
+            ? {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+              }
+            : false,
       });
 
       this.localScreenStream.getVideoTracks()[0].onended = () => {
@@ -209,6 +222,12 @@ class WebRTCManager {
 
       const videoTrack = this.localScreenStream.getVideoTracks()[0];
       if (videoTrack) {
+        // Enforce content hint so browser encoder prioritizes crisp detail or high motion
+        if ('contentHint' in videoTrack) {
+          (videoTrack as any).contentHint =
+            preset.contentHint || (preset.frameRate >= 60 ? 'motion' : 'detail');
+        }
+
         this.peers.forEach((pc) => {
           const sender = pc.addTrack(videoTrack, this.localScreenStream!);
           if (sender && sender.getParameters) {
@@ -218,10 +237,21 @@ class WebRTCManager {
                 params.encodings = [{}];
               }
               params.encodings[0].maxBitrate = preset.maxBitrate;
+              params.encodings[0].maxFramerate = preset.frameRate;
+              (params as any).degradationPreference =
+                preset.frameRate >= 60 ? 'maintain-framerate' : 'maintain-resolution';
               sender.setParameters(params).catch(() => {});
             } catch {}
           }
         });
+
+        // Add audio track to peer connection if system/tab audio was shared
+        const audioTracks = this.localScreenStream.getAudioTracks();
+        if (audioTracks.length > 0) {
+          this.peers.forEach((pc) => {
+            pc.addTrack(audioTracks[0], this.localScreenStream!);
+          });
+        }
 
         this.peers.forEach((_, peerId) => {
           this.createAndSendOffer(peerId);
@@ -231,6 +261,7 @@ class WebRTCManager {
           type: 'screen-start',
           senderId: this.myUserId,
           channelId: this.currentChannelId || '',
+          presetKey,
         });
       }
 

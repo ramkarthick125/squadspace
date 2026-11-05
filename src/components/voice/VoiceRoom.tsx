@@ -12,12 +12,14 @@ import {
   Maximize2,
   Minimize2,
   Sliders,
+  Tv,
 } from 'lucide-react';
 import { Channel, UserProfile } from '../../types';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useVoiceStore } from '../../store/useVoiceStore';
 import { SCREEN_SHARE_PRESETS, ScreenSharePreset } from '../../lib/livekit';
 import { ScreenShareVideo } from './ScreenShareVideo';
+import { ScreenShareModal } from '../modals/ScreenShareModal';
 import { ChatArea } from '../chat/ChatArea';
 
 interface VoiceRoomProps {
@@ -54,55 +56,45 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
   } = useVoiceStore();
 
   const [showVoiceChat, setShowVoiceChat] = useState(false);
-  const [selectedQuality, setSelectedQuality] = useState<ScreenSharePreset>(streamQuality);
-  const [showQualityMenu, setShowQualityMenu] = useState(false);
+  const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
+  const [isTheater, setIsTheater] = useState(false);
+
   const isConnected = activeVoiceChannelId === channel.id;
   const participants = participantsByChannel[channel.id] || [];
+
+  // Check if any participant is actively streaming their screen
+  const screenSharingParticipant = participants.find((p) => p.isScreenSharing);
+
+  const handleStartStream = (presetKey: ScreenSharePreset, options: { systemAudio: boolean }) => {
+    if (!currentUser) return;
+    setStreamQuality(presetKey);
+    toggleScreenShare(currentUser, presetKey, options);
+  };
+
+  const currentPresetConfig = SCREEN_SHARE_PRESETS[streamQuality] || SCREEN_SHARE_PRESETS['1080p-60'];
 
   return (
     <div className="flex-1 flex bg-[#111214] min-w-0 h-full overflow-hidden select-none">
       {/* Center Stage: Video / Voice Grid */}
       <div className="flex-1 flex flex-col min-w-0 h-full justify-between">
         {/* Voice Room Header */}
-        <div className="h-12 bg-discord-chat/60 border-b border-discord-darkest/70 px-4 flex items-center justify-between">
+        <div className="h-12 bg-discord-chat/60 border-b border-discord-darkest/70 px-4 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <h2 className="font-bold text-discord-gray-100 text-base">{channel.name}</h2>
             <span className="text-xs px-2 py-0.5 rounded bg-discord-green/20 text-discord-green font-medium">
               {participants.length} connected
             </span>
-
-            {/* Hybrid Engine Mode Selector Pill */}
-            <div className="hidden sm:flex items-center bg-discord-sidebar rounded-full p-0.5 border border-discord-darkest text-[11px]">
-              <button
-                onClick={() => setEngineMode('p2p')}
-                title="P2P Direct Mesh: Unlimited free minutes & zero server bandwidth"
-                className={`px-2.5 py-0.5 rounded-full font-semibold transition-colors ${
-                  engineMode === 'p2p'
-                    ? 'bg-discord-green text-white shadow'
-                    : 'text-discord-gray-400 hover:text-white'
-                }`}
-              >
-                P2P (Unlimited)
-              </button>
-              <button
-                onClick={() => setEngineMode('livekit')}
-                title="LiveKit Cloud SFU: Central cloud server"
-                className={`px-2.5 py-0.5 rounded-full font-semibold transition-colors ${
-                  engineMode === 'livekit'
-                    ? 'bg-discord-blurple text-white shadow'
-                    : 'text-discord-gray-400 hover:text-white'
-                }`}
-              >
-                LiveKit Cloud
-              </button>
-            </div>
+            <span className="text-xs px-2 py-0.5 rounded bg-discord-blurple/20 text-discord-blurple-light font-medium flex items-center gap-1">
+              <Sparkles className="w-3 h-3" />
+              Direct P2P (Unlimited HD)
+            </span>
           </div>
 
           {/* Toggle Voice Channel Chat Drawer (Just like Discord!) */}
           <button
             onClick={() => setShowVoiceChat(!showVoiceChat)}
             title={showVoiceChat ? 'Hide Voice Channel Chat' : 'Open Voice Channel Chat'}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-colors cursor-pointer ${
               showVoiceChat
                 ? 'bg-discord-active text-white'
                 : 'bg-discord-sidebar text-discord-gray-300 hover:bg-discord-hover hover:text-white'
@@ -130,7 +122,7 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
         )}
 
         {/* Participants Stage */}
-        <div className="flex-1 p-6 overflow-y-auto flex items-center justify-center">
+        <div className="flex-1 p-4 md:p-6 overflow-hidden flex flex-col items-center justify-center min-h-0">
           {participants.length === 0 ? (
             <div className="text-center space-y-4 max-w-sm">
               <div className="w-20 h-20 mx-auto rounded-full bg-discord-sidebar flex items-center justify-center">
@@ -142,14 +134,81 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
               </p>
               {!isConnected && (
                 <button
-                  onClick={() => joinVoiceChannel(channel.id, currentUser)}
-                  className="px-5 py-2 rounded-md bg-discord-green hover:bg-discord-green-hover text-white text-sm font-semibold transition-colors"
+                  onClick={() => currentUser && joinVoiceChannel(channel.id, currentUser)}
+                  className="px-5 py-2 rounded-md bg-discord-green hover:bg-discord-green-hover text-white text-sm font-semibold transition-colors cursor-pointer"
                 >
                   Connect Voice
                 </button>
               )}
             </div>
+          ) : screenSharingParticipant ? (
+            /* SPOTLIGHT THEATER STAGE: When someone is sharing screen */
+            <div className="w-full h-full flex flex-col gap-3 max-w-6xl items-center justify-center min-h-0">
+              {/* Main Screen Share Stream Spotlight */}
+              <div className="w-full flex-1 min-h-0 relative flex items-center justify-center">
+                <ScreenShareVideo
+                  stream={screenShareStream}
+                  sharerName={screenSharingParticipant.user.displayName}
+                  isLocal={screenSharingParticipant.userId === currentUser?.id}
+                  presetTag={currentPresetConfig.tag}
+                  onToggleTheater={() => setIsTheater(!isTheater)}
+                  isTheater={isTheater}
+                />
+              </div>
+
+              {/* Bottom Docked Participant Strip (Unless in Theater mode) */}
+              {!isTheater && (
+                <div className="h-20 w-full flex items-center justify-center gap-3 overflow-x-auto py-1 flex-shrink-0">
+                  {participants.map((p) => {
+                    const isMe = p.userId === currentUser?.id;
+                    return (
+                      <div
+                        key={p.userId}
+                        className={`flex items-center gap-2.5 px-3 py-2 rounded-xl bg-discord-sidebar/90 border transition-all ${
+                          p.isSpeaking
+                            ? 'border-discord-green shadow-sm shadow-discord-green/20'
+                            : 'border-discord-darkest'
+                        }`}
+                      >
+                        <div className="relative">
+                          <img
+                            src={p.user.avatarUrl}
+                            alt={p.user.displayName}
+                            className={`w-9 h-9 rounded-full object-cover ${
+                              p.isSpeaking ? 'speaking-indicator' : ''
+                            }`}
+                          />
+                          {p.isScreenSharing && (
+                            <span className="absolute -bottom-1 -right-1 bg-discord-green text-white p-0.5 rounded-full shadow">
+                              <ScreenShare className="w-2.5 h-2.5" />
+                            </span>
+                          )}
+                        </div>
+                        <div className="leading-tight">
+                          <div className="text-xs font-semibold text-white flex items-center gap-1.5">
+                            <span>{p.user.displayName}</span>
+                            {isMe && <span className="text-[10px] text-discord-gray-400">(You)</span>}
+                          </div>
+                          <div className="text-[10px] text-discord-gray-400 flex items-center gap-1">
+                            {p.isMuted ? (
+                              <span className="text-discord-red flex items-center gap-0.5">
+                                <MicOff className="w-2.5 h-2.5" /> Muted
+                              </span>
+                            ) : p.isSpeaking ? (
+                              <span className="text-discord-green font-semibold">Speaking...</span>
+                            ) : (
+                              <span>Connected</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           ) : (
+            /* STANDARD VOICE GRID (When no screen is being shared) */
             <div
               className={`w-full h-full max-w-5xl grid gap-4 items-center justify-center ${
                 participants.length === 1
@@ -160,31 +219,23 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
               }`}
             >
               {participants.map((p) => {
-                const isMe = p.userId === currentUser.id;
+                const isMe = p.userId === currentUser?.id;
 
                 return (
                   <div
                     key={p.userId}
-                    className="relative bg-discord-sidebar rounded-xl border border-discord-darkest/80 flex flex-col items-center justify-center p-6 aspect-video shadow-lg group"
+                    className="relative bg-discord-sidebar rounded-2xl border border-discord-darkest/80 flex flex-col items-center justify-center p-6 aspect-video shadow-lg group"
                   >
-                    {/* Real Screen Sharing Live Stream or Avatar */}
-                    {p.isScreenSharing ? (
-                      <ScreenShareVideo
-                        stream={screenShareStream}
-                        sharerName={p.user.displayName}
+                    {/* Avatar with speaking halo */}
+                    <div className="relative">
+                      <img
+                        src={p.user.avatarUrl}
+                        alt={p.user.displayName}
+                        className={`w-24 h-24 rounded-full object-cover transition-all ${
+                          p.isSpeaking ? 'speaking-indicator' : ''
+                        }`}
                       />
-                    ) : (
-                      /* Avatar with speaking halo */
-                      <div className="relative">
-                        <img
-                          src={p.user.avatarUrl}
-                          alt={p.user.displayName}
-                          className={`w-24 h-24 rounded-full object-cover transition-all ${
-                            p.isSpeaking ? 'speaking-indicator' : ''
-                          }`}
-                        />
-                      </div>
-                    )}
+                    </div>
 
                     {/* Participant Name Badge */}
                     <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded text-xs font-semibold text-white flex items-center gap-2">
@@ -206,8 +257,8 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
         </div>
 
         {/* Bottom Voice Controls Bar */}
-        <div className="h-20 bg-discord-darkest/90 border-t border-discord-darkest/60 px-6 flex items-center justify-center gap-4">
-          {isConnected ? (
+        <div className="h-20 bg-discord-darkest/95 border-t border-discord-darkest/60 px-6 flex items-center justify-center gap-4 flex-shrink-0">
+          {isConnected && currentUser ? (
             <>
               {/* Live Mic Level Visualizer */}
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-discord-sidebar/80 rounded-full border border-discord-darkest text-xs mr-2">
@@ -226,7 +277,7 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
               <button
                 onClick={toggleMute}
                 title={isMuted ? 'Unmute Mic' : 'Mute Mic'}
-                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all cursor-pointer ${
                   isMuted
                     ? 'bg-discord-red text-white hover:bg-discord-red-hover'
                     : 'bg-discord-sidebar text-discord-gray-200 hover:bg-discord-hover hover:text-white'
@@ -239,7 +290,7 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
               <button
                 onClick={toggleDeafen}
                 title={isDeafened ? 'Undeafen' : 'Deafen'}
-                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all cursor-pointer ${
                   isDeafened
                     ? 'bg-discord-red text-white hover:bg-discord-red-hover'
                     : 'bg-discord-sidebar text-discord-gray-200 hover:bg-discord-hover hover:text-white'
@@ -248,89 +299,50 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
                 <Headphones className="w-5 h-5" />
               </button>
 
-              {/* Screen Share Toggle & Preset Quality Settings */}
-              <div className="relative flex items-center">
+              {/* Screen Share Toggle Button */}
+              <div className="flex items-center gap-1.5">
                 <button
-                  onClick={() => toggleScreenShare(currentUser, selectedQuality)}
-                  title={isScreenSharing ? 'Stop Screen Share' : `Share Screen (${selectedQuality})`}
-                  className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                  onClick={() => {
+                    if (isScreenSharing) {
+                      toggleScreenShare(currentUser);
+                    } else {
+                      setIsScreenShareModalOpen(true);
+                    }
+                  }}
+                  title={isScreenSharing ? 'Stop Screen Share' : 'Share Your Screen'}
+                  className={`px-4 h-12 rounded-full flex items-center gap-2 font-bold text-xs transition-all cursor-pointer shadow-lg ${
                     isScreenSharing
-                      ? 'bg-discord-green text-white hover:bg-discord-green-hover'
-                      : 'bg-discord-sidebar text-discord-gray-200 hover:bg-discord-hover hover:text-white'
+                      ? 'bg-discord-red hover:bg-discord-red-hover text-white shadow-discord-red/30'
+                      : 'bg-discord-blurple hover:bg-discord-blurple-hover text-white shadow-discord-blurple/30'
                   }`}
                 >
                   <ScreenShare className="w-5 h-5" />
+                  <span>{isScreenSharing ? 'Stop Stream' : 'Share Screen'}</span>
                 </button>
 
+                {/* Quality Settings Gear / Sliders Button */}
                 <button
-                  onClick={() => setShowQualityMenu(!showQualityMenu)}
-                  title="Stream Quality Settings (720p, 1080p, 2K)"
-                  className="ml-1 p-1.5 rounded-full hover:bg-discord-hover text-discord-gray-400 hover:text-discord-gray-100"
+                  onClick={() => setIsScreenShareModalOpen(true)}
+                  title="Screen Share Quality Settings (1080p, 2K, 60 FPS)"
+                  className="p-2.5 rounded-full hover:bg-discord-hover text-discord-gray-400 hover:text-discord-gray-100 transition-colors cursor-pointer bg-discord-sidebar"
                 >
-                  <Sliders className="w-3.5 h-3.5" />
+                  <Sliders className="w-4 h-4" />
                 </button>
-
-                {/* Quality Preset Menu (Including 2K) */}
-                {showQualityMenu && (
-                  <>
-                    <div className="fixed inset-0 z-30" onClick={() => setShowQualityMenu(false)} />
-                    <div className="absolute bottom-16 left-1/2 -translate-x-1/2 w-80 bg-[#111214] border border-[#2b2d31] rounded-xl shadow-2xl p-3 z-40 text-xs select-none">
-                      <div className="font-bold text-discord-gray-300 uppercase tracking-wider mb-2 flex items-center justify-between">
-                        <span>Stream Resolution</span>
-                        <span className="text-[10px] text-discord-green font-mono">P2P 0 Server Cost</span>
-                      </div>
-
-                      <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                        {(Object.keys(SCREEN_SHARE_PRESETS) as ScreenSharePreset[]).map((key) => {
-                          const preset = SCREEN_SHARE_PRESETS[key];
-                          const isSelected = selectedQuality === key;
-                          return (
-                            <div
-                              key={key}
-                              onClick={() => {
-                                setSelectedQuality(key);
-                                setStreamQuality(key);
-                                setShowQualityMenu(false);
-                              }}
-                              className={`p-2.5 rounded-lg cursor-pointer transition-colors border ${
-                                isSelected
-                                  ? 'bg-discord-blurple/20 border-discord-blurple text-white'
-                                  : 'bg-discord-sidebar/60 border-transparent hover:bg-discord-sidebar text-discord-gray-300'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between mb-0.5">
-                                <span className="font-semibold text-xs text-discord-gray-100">
-                                  {preset.name}
-                                </span>
-                                <span className="bg-discord-darkest px-1.5 py-0.5 rounded text-[9px] font-bold text-discord-blurple-light">
-                                  {preset.tag}
-                                </span>
-                              </div>
-                              <div className="text-[10px] text-discord-gray-400">
-                                {preset.description}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </>
-                )}
               </div>
 
               {/* Disconnect Voice */}
               <button
                 onClick={() => leaveVoiceChannel(currentUser)}
                 title="Disconnect Call"
-                className="w-12 h-12 rounded-full bg-discord-red text-white hover:bg-discord-red-hover flex items-center justify-center shadow-lg transition-transform hover:scale-105"
+                className="w-12 h-12 rounded-full bg-discord-red text-white hover:bg-discord-red-hover flex items-center justify-center shadow-lg transition-transform hover:scale-105 cursor-pointer ml-2"
               >
                 <PhoneOff className="w-5 h-5" />
               </button>
             </>
           ) : (
             <button
-              onClick={() => joinVoiceChannel(channel.id, currentUser)}
-              className="px-6 py-2.5 rounded-full bg-discord-green hover:bg-discord-green-hover text-white font-bold flex items-center gap-2 shadow-lg transition-all"
+              onClick={() => currentUser && joinVoiceChannel(channel.id, currentUser)}
+              className="px-6 py-2.5 rounded-full bg-discord-green hover:bg-discord-green-hover text-white font-bold flex items-center gap-2 shadow-lg transition-all cursor-pointer"
             >
               <span>Join Voice Channel</span>
             </button>
@@ -353,6 +365,14 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
           />
         </div>
       )}
+
+      {/* Screen Share Settings & Quality Modal */}
+      <ScreenShareModal
+        isOpen={isScreenShareModalOpen}
+        onClose={() => setIsScreenShareModalOpen(false)}
+        onStartStream={handleStartStream}
+        defaultPreset={streamQuality}
+      />
     </div>
   );
 };

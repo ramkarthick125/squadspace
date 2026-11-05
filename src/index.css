@@ -61,3 +61,35 @@ body {
   border: 2px solid #23a55a;
   animation: speaking-pulse 1.5s infinite;
 }
+
+/* Prevent native browser video playback controls and scrubbers on WebRTC streams */
+video::-webkit-media-controls {
+  display: none !important;
+}
+video::-webkit-media-controls-enclosure {
+  display: none !important;
+}
+video::-webkit-media-controls-panel {
+  display: none !important;
+}
+video::-webkit-media-controls-play-button {
+  display: none !important;
+}
+video::-webkit-media-controls-timeline {
+  display: none !important;
+}
+video::-webkit-media-controls-current-time-display {
+  display: none !important;
+}
+video::-webkit-media-controls-time-remaining-display {
+  display: none !important;
+}
+video::-webkit-media-controls-mute-button {
+  display: none !important;
+}
+video::-webkit-media-controls-volume-slider {
+  display: none !important;
+}
+video::-webkit-media-controls-fullscreen-button {
+  display: none !important;
+}
