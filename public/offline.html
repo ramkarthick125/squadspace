@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SquadSpace — Offline</title>
+  <style>
+    body {
+      background-color: #1e1f22;
+      color: #dbdee1;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      text-align: center;
+      padding: 20px;
+    }
+    .card {
+      background-color: #2b2d31;
+      padding: 32px;
+      border-radius: 12px;
+      max-width: 400px;
+      border: 1px solid #383a40;
+    }
+    h1 {
+      font-size: 20px;
+      margin-bottom: 8px;
+      color: #f2f3f5;
+    }
+    p {
+      font-size: 14px;
+      color: #949ba4;
+      line-height: 1.5;
+    }
+    button {
+      margin-top: 16px;
+      background-color: #5865f2;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #4752c4;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>You're Offline</h1>
+    <p>SquadSpace requires an active internet connection to stream voice audio, send real-time messages, and connect with your squad.</p>
+    <button onclick="window.location.reload()">Reconnect</button>
+  </div>
+</body>
+</html>
