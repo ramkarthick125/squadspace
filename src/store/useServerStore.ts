@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Channel, ChannelCategory, CustomEmoji, Server, ServerInvite, UserProfile } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useAuthStore } from './useAuthStore';
+import { realtimeService } from '../lib/realtimeService';
 
 interface ServerState {
   userServers: Server[];
@@ -529,6 +530,10 @@ export const useServerStore = create<ServerState>((set, get) => ({
     const updated = [...channels, newChannel];
     set({ channels: updated, activeChannelId: newId });
 
+    // Broadcast in real-time to all other devices & tabs
+    const currentUserId = useAuthStore.getState().currentUser?.id || 'admin';
+    realtimeService.broadcastChannelEvent('created', newChannel, activeServerId, currentUserId);
+
     // 1. ALWAYS save to localStorage first (prevents vanishing on refresh!)
     try {
       localStorage.setItem(`squadspace_channels_${activeServerId}`, JSON.stringify(updated));
@@ -562,6 +567,9 @@ export const useServerStore = create<ServerState>((set, get) => ({
 
     set({ channels: remaining, activeChannelId: fallback });
 
+    const currentUserId = useAuthStore.getState().currentUser?.id || 'admin';
+    realtimeService.broadcastChannelEvent('deleted', { id }, activeServerId, currentUserId);
+
     try {
       localStorage.setItem(`squadspace_channels_${activeServerId}`, JSON.stringify(remaining));
     } catch {}
@@ -582,6 +590,9 @@ export const useServerStore = create<ServerState>((set, get) => ({
     );
 
     set({ channels: updated });
+
+    const currentUserId = useAuthStore.getState().currentUser?.id || 'admin';
+    realtimeService.broadcastChannelEvent('renamed', { id, name, topic }, activeServerId, currentUserId);
 
     try {
       localStorage.setItem(`squadspace_channels_${activeServerId}`, JSON.stringify(updated));

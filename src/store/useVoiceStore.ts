@@ -30,6 +30,9 @@ interface VoiceState {
 let audioLevelUnsub: (() => void) | null = null;
 let speakingUnsub: (() => void) | null = null;
 let remoteTrackUnsub: (() => void) | null = null;
+let participantJoinedUnsub: (() => void) | null = null;
+let participantLeftUnsub: (() => void) | null = null;
+let participantUpdateUnsub: (() => void) | null = null;
 
 export const useVoiceStore = create<VoiceState>((set, get) => ({
   activeVoiceChannelId: null,
@@ -57,7 +60,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     }
 
     if (engineMode === 'p2p') {
-      const success = await webrtcManager.joinVoiceChannel(channelId, currentUser.id);
+      const success = await webrtcManager.joinVoiceChannel(channelId, currentUser);
       if (!success) {
         console.warn('Microphone permission note: Joining in listen mode.');
       }
@@ -84,6 +87,64 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
           screenShareStream: stream,
         });
       }
+    });
+
+    if (participantJoinedUnsub) participantJoinedUnsub();
+    participantJoinedUnsub = webrtcManager.onParticipantJoined((remoteUser, remoteMuted, remoteScreen) => {
+      const { activeVoiceChannelId, participantsByChannel } = get();
+      if (!activeVoiceChannelId) return;
+
+      const currentList = participantsByChannel[activeVoiceChannelId] || [];
+      if (!currentList.some((p) => p.userId === remoteUser.id)) {
+        const newRemoteP: VoiceParticipant = {
+          userId: remoteUser.id,
+          user: remoteUser,
+          isMuted: Boolean(remoteMuted),
+          isDeafened: false,
+          isSpeaking: false,
+          isScreenSharing: Boolean(remoteScreen),
+          joinedAt: new Date().toISOString(),
+        };
+
+        set({
+          participantsByChannel: {
+            ...participantsByChannel,
+            [activeVoiceChannelId]: [...currentList, newRemoteP],
+          },
+        });
+        sounds.playJoinVoice();
+      }
+    });
+
+    if (participantLeftUnsub) participantLeftUnsub();
+    participantLeftUnsub = webrtcManager.onParticipantLeft((peerId) => {
+      const { activeVoiceChannelId, participantsByChannel } = get();
+      if (!activeVoiceChannelId) return;
+
+      const currentList = participantsByChannel[activeVoiceChannelId] || [];
+      set({
+        participantsByChannel: {
+          ...participantsByChannel,
+          [activeVoiceChannelId]: currentList.filter((p) => p.userId !== peerId),
+        },
+      });
+      sounds.playLeaveVoice();
+    });
+
+    if (participantUpdateUnsub) participantUpdateUnsub();
+    participantUpdateUnsub = webrtcManager.onParticipantUpdate((peerId, updates) => {
+      const { activeVoiceChannelId, participantsByChannel } = get();
+      if (!activeVoiceChannelId) return;
+
+      const currentList = participantsByChannel[activeVoiceChannelId] || [];
+      set({
+        participantsByChannel: {
+          ...participantsByChannel,
+          [activeVoiceChannelId]: currentList.map((p) =>
+            p.userId === peerId ? { ...p, ...updates } : p
+          ),
+        },
+      });
     });
 
     let updated = { ...participantsByChannel };
@@ -134,6 +195,18 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     if (remoteTrackUnsub) {
       remoteTrackUnsub();
       remoteTrackUnsub = null;
+    }
+    if (participantJoinedUnsub) {
+      participantJoinedUnsub();
+      participantJoinedUnsub = null;
+    }
+    if (participantLeftUnsub) {
+      participantLeftUnsub();
+      participantLeftUnsub = null;
+    }
+    if (participantUpdateUnsub) {
+      participantUpdateUnsub();
+      participantUpdateUnsub = null;
     }
 
     const updated = {

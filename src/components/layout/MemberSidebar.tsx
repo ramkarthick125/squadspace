@@ -40,11 +40,17 @@ export const MemberSidebar: React.FC<MemberSidebarProps> = ({ onSelectMember }) 
     return null;
   };
 
-  const allMembers = currentUser
+  const isRealUser = (m: UserProfile) =>
+    !m.username.startsWith('uuid_test') &&
+    !m.username.startsWith('tokentest') &&
+    !m.username.startsWith('testuser');
+
+  const allMembers = (currentUser
     ? members.some((m) => m.id === currentUser.id)
       ? members
       : [currentUser, ...members]
-    : members;
+    : members
+  ).filter(isRealUser);
 
   const onlineMembers = allMembers.filter((m) => m.status !== 'offline');
   const offlineMembers = allMembers.filter((m) => m.status === 'offline');

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Message, MessageAttachment, UserProfile } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { notificationService } from '../lib/notificationService';
+import { realtimeService } from '../lib/realtimeService';
 
 interface ChatState {
   messagesByChannel: Record<string, Message[]>;
@@ -229,13 +230,8 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       persistMessages(updated);
 
-      if (chatBroadcast) {
-        chatBroadcast.postMessage({
-          type: 'new_message',
-          channelId,
-          message: newMessage,
-        });
-      }
+      // Broadcast to all other devices & tabs in real-time
+      realtimeService.broadcastMessage(newMessage);
 
       if (isSupabaseConfigured && supabase) {
         try {
@@ -267,14 +263,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       set({ messagesByChannel: updated });
       persistMessages(updated);
 
-      if (chatBroadcast) {
-        chatBroadcast.postMessage({
-          type: 'edit_message',
-          channelId,
-          messageId,
-          newContent,
-        });
-      }
+      realtimeService.broadcastMessageEdit(channelId, messageId, newContent, 'user');
 
       if (isSupabaseConfigured && supabase) {
         try {
@@ -297,13 +286,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       set({ messagesByChannel: updated });
       persistMessages(updated);
 
-      if (chatBroadcast) {
-        chatBroadcast.postMessage({
-          type: 'delete_message',
-          channelId,
-          messageId,
-        });
-      }
+      realtimeService.broadcastMessageDelete(channelId, messageId, 'user');
 
       if (isSupabaseConfigured && supabase) {
         try {

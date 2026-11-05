@@ -1,180 +1,323 @@
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from './supabase';
-import { Message, MessageReaction, UserProfile } from '../types';
+import { Channel, Message, MessageReaction, UserProfile, VoiceParticipant } from '../types';
 import { useChatStore } from '../store/useChatStore';
 import { useServerStore } from '../store/useServerStore';
+import { useVoiceStore } from '../store/useVoiceStore';
+import { useDMStore } from '../store/useDMStore';
 import { notificationService } from './notificationService';
 
-let messagesChannel: RealtimeChannel | null = null;
 let broadcastChannel: RealtimeChannel | null = null;
+let localBroadcast: BroadcastChannel | null = null;
 
 export const realtimeService = {
   /**
-   * Subscribe to real-time messages and reactions
+   * Initialize real-time sync across devices (Supabase Broadcast) and tabs (Web BroadcastChannel)
    */
   initRealtimeSubscriptions(currentUser: UserProfile) {
-    if (!isSupabaseConfigured || !supabase) {
-      console.info('Supabase Realtime not enabled (mock fallback active).');
-      return () => {};
+    // 1. Local Cross-Tab Broadcast Channel (Instant 0ms latency for same-machine browsers)
+    if (typeof window !== 'undefined') {
+      try {
+        localBroadcast = new BroadcastChannel('squadspace_universal_sync');
+        localBroadcast.onmessage = (event) => {
+          this.handleIncomingPayload(event.data, currentUser);
+        };
+      } catch {}
     }
 
-    // 1. Subscribe to Postgres Database Changes for Messages
-    messagesChannel = supabase
-      .channel('public:messages_realtime')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'messages' },
-        async (payload) => {
-          const newRow = payload.new as any;
-          // Don't re-add if we sent it locally already
-          if (newRow.sender_id === currentUser.id) return;
+    if (!isSupabaseConfigured || !supabase) {
+      return () => {
+        if (localBroadcast) localBroadcast.close();
+      };
+    }
 
-          // Fetch sender profile
-          const { data: sender } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', newRow.sender_id)
-            .single();
-
-          const incomingMsg: Message = {
-            id: newRow.id,
-            channelId: newRow.channel_id,
-            senderId: newRow.sender_id,
-            sender: sender || {
-              id: newRow.sender_id,
-              username: 'user',
-              displayName: 'Squad Member',
-              avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-              status: 'online',
-            },
-            content: newRow.content,
-            attachments: newRow.attachments || [],
-            reactions: [],
-            isPinned: newRow.is_pinned,
-            isEdited: newRow.is_edited,
-            createdAt: newRow.created_at,
-          };
-
-          const store = useChatStore.getState();
-          const existing = store.messagesByChannel[newRow.channel_id] || [];
-          if (!existing.some((m) => m.id === incomingMsg.id)) {
-            useChatStore.setState({
-              messagesByChannel: {
-                ...store.messagesByChannel,
-                [newRow.channel_id]: [...existing, incomingMsg],
-              },
-            });
-
-            // Trigger notification
-            const channels = useServerStore.getState().channels;
-            const channel = channels.find((c) => c.id === newRow.channel_id);
-            notificationService.notify({
-              title: `#${channel?.name || 'chat'} — ${incomingMsg.sender.displayName}`,
-              body: incomingMsg.content,
-              channelId: newRow.channel_id,
-            });
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'messages' },
-        (payload) => {
-          const updatedRow = payload.new as any;
-          const store = useChatStore.getState();
-          const channelId = updatedRow.channel_id;
-          const existing = store.messagesByChannel[channelId] || [];
-
-          useChatStore.setState({
-            messagesByChannel: {
-              ...store.messagesByChannel,
-              [channelId]: existing.map((m) =>
-                m.id === updatedRow.id
-                  ? { ...m, content: updatedRow.content, isEdited: updatedRow.is_edited, isPinned: updatedRow.is_pinned }
-                  : m
-              ),
-            },
-          });
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'messages' },
-        (payload) => {
-          const deletedId = (payload.old as any)?.id;
-          if (!deletedId) return;
-
-          const store = useChatStore.getState();
-          const updatedByChannel: Record<string, Message[]> = {};
-
-          for (const [chId, msgs] of Object.entries(store.messagesByChannel)) {
-            updatedByChannel[chId] = msgs.filter((m) => m.id !== deletedId);
-          }
-
-          useChatStore.setState({ messagesByChannel: updatedByChannel });
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'channels' },
-        () => {
-          useServerStore.getState().fetchServerData();
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'channel_categories' },
-        () => {
-          useServerStore.getState().fetchServerData();
-        }
-      )
-      .subscribe();
-
-    // 2. Broadcast Channel for Live Typing & Presence
-    broadcastChannel = supabase.channel('squadspace_broadcast', {
-      config: { presence: { key: currentUser.id } },
-    });
-
-    broadcastChannel
-      .on('broadcast', { event: 'typing' }, (event) => {
-        const { channelId, username, isTyping } = event.payload;
-        if (username === currentUser.username) return;
-        useChatStore.getState().setTyping(channelId, username, isTyping);
-      })
-      .on('presence', { event: 'sync' }, () => {
-        const state = broadcastChannel?.presenceState();
-        if (state) {
-          // Sync online members
-          const onlineUserIds = Object.keys(state);
-          const serverStore = useServerStore.getState();
-          serverStore.members.forEach((m) => {
-            if (onlineUserIds.includes(m.id) && m.status === 'offline') {
-              serverStore.updateMember(m.id, { status: 'online' });
-            }
-          });
-        }
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await broadcastChannel?.track({
-            userId: currentUser.id,
-            username: currentUser.username,
-            status: currentUser.status,
-            customStatus: currentUser.customStatus,
-            gamingActivity: currentUser.gamingActivity,
-          });
-        }
+    // 2. Supabase Realtime Broadcast & Presence (Sub-50ms latency across the internet)
+    try {
+      broadcastChannel = supabase.channel('squadspace_global_mesh', {
+        config: {
+          broadcast: { self: false },
+          presence: { key: currentUser.id },
+        },
       });
 
+      broadcastChannel
+        .on('broadcast', { event: 'sync_event' }, (event) => {
+          this.handleIncomingPayload(event.payload, currentUser);
+        })
+        .on('broadcast', { event: 'typing' }, (event) => {
+          const { channelId, username, isTyping } = event.payload;
+          if (username === currentUser.username) return;
+          useChatStore.getState().setTyping(channelId, username, isTyping);
+        })
+        .on('presence', { event: 'sync' }, () => {
+          const state = broadcastChannel?.presenceState();
+          if (state) {
+            const onlineUserIds = Object.keys(state);
+            const serverStore = useServerStore.getState();
+            serverStore.members.forEach((m) => {
+              if (onlineUserIds.includes(m.id) && m.status === 'offline') {
+                serverStore.updateMember(m.id, { status: 'online' });
+              }
+            });
+          }
+        })
+        .subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            await broadcastChannel?.track({
+              userId: currentUser.id,
+              username: currentUser.username,
+              status: currentUser.status,
+              customStatus: currentUser.customStatus,
+              gamingActivity: currentUser.gamingActivity,
+            });
+          }
+        });
+    } catch (err) {
+      console.warn('Realtime sync setup note:', err);
+    }
+
     return () => {
-      if (messagesChannel) supabase.removeChannel(messagesChannel);
-      if (broadcastChannel) supabase.removeChannel(broadcastChannel);
+      if (localBroadcast) localBroadcast.close();
+      if (broadcastChannel && supabase) supabase.removeChannel(broadcastChannel);
     };
   },
 
   /**
-   * Broadcast typing state to all connected peers
+   * Handle incoming real-time payload from either WebSockets or Local Broadcast
    */
+  handleIncomingPayload(payload: any, currentUser: UserProfile) {
+    if (!payload || payload.senderId === currentUser.id) return;
+
+    switch (payload.type) {
+      // 1. Live Chat Message received
+      case 'new_message': {
+        const { message, channelId } = payload;
+        const chatStore = useChatStore.getState();
+        const existing = chatStore.messagesByChannel[channelId] || [];
+
+        if (!existing.some((m) => m.id === message.id)) {
+          useChatStore.setState({
+            messagesByChannel: {
+              ...chatStore.messagesByChannel,
+              [channelId]: [...existing, message],
+            },
+          });
+
+          // Show desktop notification
+          const channels = useServerStore.getState().channels;
+          const ch = channels.find((c) => c.id === channelId);
+          notificationService.notify({
+            title: `#${ch?.name || 'chat'} — ${message.sender?.displayName || 'User'}`,
+            body: message.content || 'Sent an attachment',
+            channelId,
+          });
+        }
+        break;
+      }
+
+      // 2. Chat Message Edited
+      case 'message_edit': {
+        const { channelId, messageId, content } = payload;
+        const chatStore = useChatStore.getState();
+        const existing = chatStore.messagesByChannel[channelId] || [];
+
+        useChatStore.setState({
+          messagesByChannel: {
+            ...chatStore.messagesByChannel,
+            [channelId]: existing.map((m) =>
+              m.id === messageId ? { ...m, content, isEdited: true } : m
+            ),
+          },
+        });
+        break;
+      }
+
+      // 3. Chat Message Deleted
+      case 'message_delete': {
+        const { channelId, messageId } = payload;
+        const chatStore = useChatStore.getState();
+        const existing = chatStore.messagesByChannel[channelId] || [];
+
+        useChatStore.setState({
+          messagesByChannel: {
+            ...chatStore.messagesByChannel,
+            [channelId]: existing.filter((m) => m.id !== messageId),
+          },
+        });
+        break;
+      }
+
+      // 4. Message Reaction
+      case 'message_reaction': {
+        const { channelId, messageId, emoji, userId } = payload;
+        const chatStore = useChatStore.getState();
+        chatStore.toggleReaction(channelId, messageId, emoji, userId);
+        break;
+      }
+
+      // 5. Channel Lifecycle (Created, Deleted, Renamed)
+      case 'channel_event': {
+        const { action, channel, serverId } = payload;
+        const serverStore = useServerStore.getState();
+        if (serverStore.activeServerId !== serverId) return;
+
+        if (action === 'created') {
+          if (!serverStore.channels.some((c) => c.id === channel.id)) {
+            const updated = [...serverStore.channels, channel];
+            useServerStore.setState({ channels: updated });
+            try {
+              localStorage.setItem(`squadspace_channels_${serverId}`, JSON.stringify(updated));
+            } catch {}
+          }
+        } else if (action === 'deleted') {
+          const updated = serverStore.channels.filter((c) => c.id !== channel.id);
+          useServerStore.setState({ channels: updated });
+          try {
+            localStorage.setItem(`squadspace_channels_${serverId}`, JSON.stringify(updated));
+          } catch {}
+        } else if (action === 'renamed') {
+          const updated = serverStore.channels.map((c) =>
+            c.id === channel.id ? { ...c, name: channel.name, topic: channel.topic } : c
+          );
+          useServerStore.setState({ channels: updated });
+          try {
+            localStorage.setItem(`squadspace_channels_${serverId}`, JSON.stringify(updated));
+          } catch {}
+        }
+        break;
+      }
+
+      // 6. Voice Channel Presence & State
+      case 'voice_state': {
+        const { channelId, user, action, isMuted } = payload;
+        const voiceStore = useVoiceStore.getState();
+        const currentByChannel = { ...voiceStore.participantsByChannel };
+        const list = currentByChannel[channelId] || [];
+
+        if (action === 'joined') {
+          if (!list.some((p) => p.userId === user.id)) {
+            currentByChannel[channelId] = [
+              ...list,
+              {
+                userId: user.id,
+                user,
+                isMuted: Boolean(isMuted),
+                isDeafened: false,
+                isSpeaking: false,
+                isScreenSharing: false,
+                joinedAt: new Date().toISOString(),
+              },
+            ];
+            useVoiceStore.setState({ participantsByChannel: currentByChannel });
+          }
+        } else if (action === 'left') {
+          currentByChannel[channelId] = list.filter((p) => p.userId !== user.id);
+          useVoiceStore.setState({ participantsByChannel: currentByChannel });
+        } else if (action === 'muted') {
+          currentByChannel[channelId] = list.map((p) =>
+            p.userId === user.id ? { ...p, isMuted: Boolean(isMuted) } : p
+          );
+          useVoiceStore.setState({ participantsByChannel: currentByChannel });
+        }
+        break;
+      }
+
+      // 7. Direct Message (DM)
+      case 'new_dm': {
+        const { message, conversationId } = payload;
+        const dmStore = useDMStore.getState();
+        const existing = dmStore.dmMessages[conversationId] || [];
+
+        if (!existing.some((m) => m.id === message.id)) {
+          useDMStore.setState({
+            dmMessages: {
+              ...dmStore.dmMessages,
+              [conversationId]: [...existing, message],
+            },
+          });
+
+          notificationService.notify({
+            title: `@${message.sender?.displayName || 'Direct Message'}`,
+            body: message.content || 'Sent an invite card',
+          });
+        }
+        break;
+      }
+    }
+  },
+
+  /**
+   * Broadcast message to all connected clients
+   */
+  broadcastMessage(message: Message) {
+    this.sendUniversalPayload({
+      type: 'new_message',
+      senderId: message.senderId,
+      channelId: message.channelId,
+      message,
+    });
+  },
+
+  broadcastMessageEdit(channelId: string, messageId: string, content: string, senderId: string) {
+    this.sendUniversalPayload({
+      type: 'message_edit',
+      senderId,
+      channelId,
+      messageId,
+      content,
+    });
+  },
+
+  broadcastMessageDelete(channelId: string, messageId: string, senderId: string) {
+    this.sendUniversalPayload({
+      type: 'message_delete',
+      senderId,
+      channelId,
+      messageId,
+    });
+  },
+
+  broadcastReaction(channelId: string, messageId: string, emoji: string, userId: string) {
+    this.sendUniversalPayload({
+      type: 'message_reaction',
+      senderId: userId,
+      channelId,
+      messageId,
+      emoji,
+      userId,
+    });
+  },
+
+  broadcastChannelEvent(action: 'created' | 'deleted' | 'renamed', channel: any, serverId: string, senderId: string) {
+    this.sendUniversalPayload({
+      type: 'channel_event',
+      senderId,
+      action,
+      channel,
+      serverId,
+    });
+  },
+
+  broadcastVoiceState(channelId: string, user: UserProfile, action: 'joined' | 'left' | 'muted', isMuted?: boolean) {
+    this.sendUniversalPayload({
+      type: 'voice_state',
+      senderId: user.id,
+      channelId,
+      user,
+      action,
+      isMuted,
+    });
+  },
+
+  broadcastDM(message: Message, conversationId: string) {
+    this.sendUniversalPayload({
+      type: 'new_dm',
+      senderId: message.senderId,
+      conversationId,
+      message,
+    });
+  },
+
   broadcastTyping(channelId: string, username: string, isTyping: boolean) {
     if (broadcastChannel) {
       broadcastChannel.send({
@@ -182,6 +325,25 @@ export const realtimeService = {
         event: 'typing',
         payload: { channelId, username, isTyping },
       });
+    }
+  },
+
+  sendUniversalPayload(payload: any) {
+    // 1. Local cross-tab
+    if (localBroadcast) {
+      try {
+        localBroadcast.postMessage(payload);
+      } catch {}
+    }
+    // 2. Supabase internet broadcast
+    if (broadcastChannel) {
+      try {
+        broadcastChannel.send({
+          type: 'broadcast',
+          event: 'sync_event',
+          payload,
+        });
+      } catch {}
     }
   },
 };

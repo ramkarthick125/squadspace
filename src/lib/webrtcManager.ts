@@ -12,6 +12,7 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { SCREEN_SHARE_PRESETS, ScreenSharePreset } from './livekit';
+import { UserProfile, VoiceParticipant } from '../types';
 
 export interface PeerConnectionInfo {
   peerId: string;
@@ -21,6 +22,9 @@ export interface PeerConnectionInfo {
 }
 
 type AudioLevelCallback = (volumePercent: number, isSpeaking: boolean) => void;
+type ParticipantJoinedCallback = (user: UserProfile, isMuted?: boolean, isScreenSharing?: boolean) => void;
+type ParticipantLeftCallback = (userId: string) => void;
+type ParticipantUpdateCallback = (userId: string, updates: Partial<VoiceParticipant>) => void;
 
 class WebRTCManager {
   private localAudioStream: MediaStream | null = null;
@@ -35,6 +39,7 @@ class WebRTCManager {
   private peers: Map<string, RTCPeerConnection> = new Map();
   private remoteAudioElements: Map<string, HTMLAudioElement> = new Map();
 
+  private currentUser: UserProfile | null = null;
   private myUserId: string = '';
   private currentChannelId: string | null = null;
   private isMuted: boolean = false;
@@ -43,19 +48,25 @@ class WebRTCManager {
   private onAudioLevelCallbacks: Set<AudioLevelCallback> = new Set();
   private onRemoteTrackCallbacks: Set<(peerId: string, track: MediaStreamTrack, stream: MediaStream) => void> = new Set();
   private onSpeakingChangeCallbacks: Set<(userId: string, isSpeaking: boolean) => void> = new Set();
+  private onParticipantJoinedCallbacks: Set<ParticipantJoinedCallback> = new Set();
+  private onParticipantLeftCallbacks: Set<ParticipantLeftCallback> = new Set();
+  private onParticipantUpdateCallbacks: Set<ParticipantUpdateCallback> = new Set();
 
   constructor() {
     if (typeof window !== 'undefined') {
-      this.localSignalingChannel = new BroadcastChannel('squadspace_webrtc_signaling');
-      this.localSignalingChannel.onmessage = this.handleSignalingMessage.bind(this);
+      try {
+        this.localSignalingChannel = new BroadcastChannel('squadspace_webrtc_signaling_v2');
+        this.localSignalingChannel.onmessage = this.handleSignalingMessage.bind(this);
+      } catch {}
     }
   }
 
   /**
    * Initialize local audio and join voice channel
    */
-  async joinVoiceChannel(channelId: string, userId: string): Promise<boolean> {
-    this.myUserId = userId;
+  async joinVoiceChannel(channelId: string, user: UserProfile): Promise<boolean> {
+    this.currentUser = user;
+    this.myUserId = user.id;
     this.currentChannelId = channelId;
 
     try {
@@ -71,9 +82,18 @@ class WebRTCManager {
 
       // 2. Set up Web Audio API volume analysis & speaking detection
       this.initAudioAnalysis();
+    } catch (err) {
+      console.warn('Microphone permission note: Operating in listen-only mode.');
+      this.localAudioStream = null;
+    }
 
-      // 3. Connect Supabase Realtime broadcast for inter-device internet signaling
-      if (isSupabaseConfigured && supabase) {
+    // 3. Connect Supabase Realtime broadcast for inter-device internet signaling
+    if (isSupabaseConfigured && supabase) {
+      try {
+        if (this.supabaseSignalingChannel) {
+          supabase.removeChannel(this.supabaseSignalingChannel);
+        }
+
         this.supabaseSignalingChannel = supabase.channel(`voice_signaling_${channelId}`, {
           config: { broadcast: { self: false } },
         });
@@ -82,21 +102,36 @@ class WebRTCManager {
           .on('broadcast', { event: 'signal' }, (payload) => {
             this.handleSignalingPayload(payload.payload);
           })
-          .subscribe();
+          .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              this.broadcastJoin();
+            }
+          });
+      } catch (err) {
+        console.warn('Signaling channel setup note:', err);
       }
-
-      // 4. Broadcast to peers that we joined this voice channel
-      this.sendSignal({
-        type: 'join',
-        senderId: this.myUserId,
-        channelId: this.currentChannelId,
-      });
-
-      return true;
-    } catch (err) {
-      console.error('Failed to get microphone permissions:', err);
-      return false;
     }
+
+    // 4. Send join signal immediately on local broadcast channel (for multi-tab testing)
+    this.broadcastJoin();
+
+    // Repeat join burst after 800ms and 1800ms to guarantee handshakes
+    setTimeout(() => this.broadcastJoin(), 800);
+    setTimeout(() => this.broadcastJoin(), 1800);
+
+    return true;
+  }
+
+  private broadcastJoin() {
+    if (!this.currentChannelId || !this.currentUser) return;
+    this.sendSignal({
+      type: 'join',
+      senderId: this.myUserId,
+      channelId: this.currentChannelId,
+      user: this.currentUser,
+      isMuted: this.isMuted,
+      isScreenSharing: Boolean(this.localScreenStream),
+    });
   }
 
   /**
@@ -148,6 +183,7 @@ class WebRTCManager {
     this.remoteAudioElements.clear();
 
     this.currentChannelId = null;
+    this.currentUser = null;
   }
 
   /**
@@ -164,21 +200,17 @@ class WebRTCManager {
           width: { ideal: preset.resolution.width, max: preset.resolution.width },
           height: { ideal: preset.resolution.height, max: preset.resolution.height },
         },
-        audio: true, // share computer / game audio
+        audio: true,
       });
 
-      // Handle user stopping screen share via browser floating bar
       this.localScreenStream.getVideoTracks()[0].onended = () => {
         this.stopScreenShare();
       };
 
-      // Add screen track to all active peer connections
       const videoTrack = this.localScreenStream.getVideoTracks()[0];
       if (videoTrack) {
         this.peers.forEach((pc) => {
           const sender = pc.addTrack(videoTrack, this.localScreenStream!);
-
-          // Apply bitrate cap for the selected preset
           if (sender && sender.getParameters) {
             try {
               const params = sender.getParameters();
@@ -191,9 +223,14 @@ class WebRTCManager {
           }
         });
 
-        // Notify peers to renegotiate
         this.peers.forEach((_, peerId) => {
           this.createAndSendOffer(peerId);
+        });
+
+        this.sendSignal({
+          type: 'screen-start',
+          senderId: this.myUserId,
+          channelId: this.currentChannelId || '',
         });
       }
 
@@ -262,6 +299,21 @@ class WebRTCManager {
   onSpeakingChange(callback: (userId: string, isSpeaking: boolean) => void): () => void {
     this.onSpeakingChangeCallbacks.add(callback);
     return () => this.onSpeakingChangeCallbacks.delete(callback);
+  }
+
+  onParticipantJoined(callback: ParticipantJoinedCallback): () => void {
+    this.onParticipantJoinedCallbacks.add(callback);
+    return () => this.onParticipantJoinedCallbacks.delete(callback);
+  }
+
+  onParticipantLeft(callback: ParticipantLeftCallback): () => void {
+    this.onParticipantLeftCallbacks.add(callback);
+    return () => this.onParticipantLeftCallbacks.delete(callback);
+  }
+
+  onParticipantUpdate(callback: ParticipantUpdateCallback): () => void {
+    this.onParticipantUpdateCallbacks.add(callback);
+    return () => this.onParticipantUpdateCallbacks.delete(callback);
   }
 
   // --------------------------------------------------------------------------
@@ -333,8 +385,6 @@ class WebRTCManager {
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' },
         { urls: 'stun:stun.cloudflare.com:3478' },
       ],
       iceCandidatePoolSize: 10,
@@ -413,7 +463,38 @@ class WebRTCManager {
 
     switch (data.type) {
       case 'join': {
+        // A new peer joined the voice channel!
+        if (data.user) {
+          this.onParticipantJoinedCallbacks.forEach((cb) =>
+            cb(data.user, data.isMuted, data.isScreenSharing)
+          );
+        }
+
+        // Announce ourselves back so the joining user knows we are here
+        if (this.currentUser) {
+          this.sendSignal({
+            type: 'announce',
+            targetId: data.senderId,
+            senderId: this.myUserId,
+            channelId: this.currentChannelId,
+            user: this.currentUser,
+            isMuted: this.isMuted,
+            isScreenSharing: Boolean(this.localScreenStream),
+          });
+        }
+
+        // Send WebRTC offer
         await this.createAndSendOffer(data.senderId);
+        break;
+      }
+
+      case 'announce': {
+        // An existing peer announced themselves in response to our join signal
+        if (data.targetId === this.myUserId && data.user) {
+          this.onParticipantJoinedCallbacks.forEach((cb) =>
+            cb(data.user, data.isMuted, data.isScreenSharing)
+          );
+        }
         break;
       }
 
@@ -429,6 +510,29 @@ class WebRTCManager {
           audioEl.remove();
           this.remoteAudioElements.delete(data.senderId);
         }
+
+        this.onParticipantLeftCallbacks.forEach((cb) => cb(data.senderId));
+        break;
+      }
+
+      case 'mute-change': {
+        this.onParticipantUpdateCallbacks.forEach((cb) =>
+          cb(data.senderId, { isMuted: data.isMuted })
+        );
+        break;
+      }
+
+      case 'screen-start': {
+        this.onParticipantUpdateCallbacks.forEach((cb) =>
+          cb(data.senderId, { isScreenSharing: true })
+        );
+        break;
+      }
+
+      case 'screen-stop': {
+        this.onParticipantUpdateCallbacks.forEach((cb) =>
+          cb(data.senderId, { isScreenSharing: false })
+        );
         break;
       }
 
@@ -475,26 +579,25 @@ class WebRTCManager {
         }
         break;
       }
-
-      case 'screen-stop': {
-        // Peer stopped sharing screen
-        break;
-      }
     }
   }
 
   private sendSignal(payload: any) {
     // 1. Broadcast locally for multi-tab
     if (this.localSignalingChannel) {
-      this.localSignalingChannel.postMessage(payload);
+      try {
+        this.localSignalingChannel.postMessage(payload);
+      } catch {}
     }
     // 2. Broadcast via Supabase Realtime for internet devices
     if (this.supabaseSignalingChannel) {
-      this.supabaseSignalingChannel.send({
-        type: 'broadcast',
-        event: 'signal',
-        payload,
-      });
+      try {
+        this.supabaseSignalingChannel.send({
+          type: 'broadcast',
+          event: 'signal',
+          payload,
+        });
+      } catch {}
     }
   }
 }
