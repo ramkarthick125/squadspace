@@ -9,6 +9,7 @@ import {
   Settings,
   MicOff,
   ScreenShare,
+  Key,
 } from 'lucide-react';
 import { useServerStore } from '../../store/useServerStore';
 import { useVoiceStore } from '../../store/useVoiceStore';
@@ -20,6 +21,7 @@ interface ChannelSidebarProps {
   onOpenCreateChannel: (categoryId?: string, defaultType?: 'text' | 'voice') => void;
   onOpenServerSettings: () => void;
   onOpenInviteModal: () => void;
+  onOpenJoinServer: () => void;
 }
 
 export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
@@ -27,6 +29,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   onOpenCreateChannel,
   onOpenServerSettings,
   onOpenInviteModal,
+  onOpenJoinServer,
 }) => {
   const { serverName, categories, channels, activeChannelId, setActiveChannel } = useServerStore();
   const { currentUser } = useAuthStore();
@@ -114,6 +117,17 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
               >
                 <span>Create Channel</span>
                 <Plus className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowServerMenu(false);
+                  onOpenJoinServer();
+                }}
+                className="w-full flex items-center justify-between px-2.5 py-2 rounded text-discord-gray-200 hover:bg-discord-hover transition-colors"
+              >
+                <span>Join with Code</span>
+                <Key className="w-4 h-4 text-discord-green" />
               </button>
             </div>
           </>

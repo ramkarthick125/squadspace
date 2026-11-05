@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Hash, Plus, UserPlus, Sparkles } from 'lucide-react';
+import { Hash, Plus, UserPlus, Sparkles, Key } from 'lucide-react';
 import { ServerRail } from './components/layout/ServerRail';
 import { ChannelSidebar } from './components/layout/ChannelSidebar';
 import { AppHeader } from './components/layout/AppHeader';
@@ -11,11 +11,13 @@ import { ProfileModal } from './components/modals/ProfileModal';
 import { ChannelModal } from './components/modals/ChannelModal';
 import { ServerSettingsModal } from './components/modals/ServerSettingsModal';
 import { InviteModal } from './components/modals/InviteModal';
+import { JoinServerModal } from './components/modals/JoinServerModal';
 import { GifPickerModal } from './components/modals/GifPickerModal';
 import { EmojiPickerModal } from './components/modals/EmojiPickerModal';
 import { AuthModal } from './components/auth/AuthModal';
 import { LiveKitVoiceManager } from './components/voice/LiveKitVoiceManager';
 import { realtimeService } from './lib/realtimeService';
+import { authService } from './lib/authService';
 import { useServerStore } from './store/useServerStore';
 import { useChatStore } from './store/useChatStore';
 import { useAuthStore } from './store/useAuthStore';
@@ -36,35 +38,61 @@ export function App() {
   const [channelModalType, setChannelModalType] = useState<ChannelType>('text');
   const [isServerSettingsOpen, setIsServerSettingsOpen] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [isJoinServerOpen, setIsJoinServerOpen] = useState(false);
   const [isGifPickerOpen, setIsGifPickerOpen] = useState(false);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [targetMessageIdForEmoji, setTargetMessageIdForEmoji] = useState<string | null>(null);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [urlInviteCode, setUrlInviteCode] = useState<string | null>(null);
 
   // PWA Install Prompt State
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [canInstallPWA, setCanInstallPWA] = useState(false);
 
-  // 1. Check Auth Session on initial load
+  // 1. Check URL parameters for server invite links (e.g. ?invite=sqd-xxxxxx)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const inv = params.get('invite') || params.get('join') || params.get('code');
+      if (inv) {
+        setUrlInviteCode(inv.trim());
+      }
+    }
+  }, []);
+
+  // 2. Check Auth Session on initial load
   useEffect(() => {
     checkSession();
   }, [checkSession]);
 
-  // 2. Fetch server data when authenticated
+  // 3. If authenticated and URL had an invite code, accept the invite
+  useEffect(() => {
+    if (isAuthenticated && currentUser && urlInviteCode) {
+      authService.joinServerWithCode(urlInviteCode, currentUser.id).then((res) => {
+        if (res.success) {
+          fetchServerData();
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setUrlInviteCode(null);
+        }
+      });
+    }
+  }, [isAuthenticated, currentUser?.id, urlInviteCode, fetchServerData]);
+
+  // 4. Fetch server data when authenticated
   useEffect(() => {
     if (isAuthenticated && currentUser) {
       fetchServerData();
     }
   }, [isAuthenticated, currentUser?.id, fetchServerData]);
 
-  // 3. Fetch channel messages whenever active channel changes
+  // 5. Fetch channel messages whenever active channel changes
   useEffect(() => {
     if (activeChannelId) {
       fetchChannelMessages(activeChannelId);
     }
   }, [activeChannelId, fetchChannelMessages]);
 
-  // 4. Initialize Supabase Realtime subscriptions
+  // 6. Initialize Supabase Realtime subscriptions
   useEffect(() => {
     if (isAuthenticated && currentUser) {
       const cleanup = realtimeService.initRealtimeSubscriptions(currentUser);
@@ -151,6 +179,7 @@ export function App() {
       <ServerRail
         onOpenServerSettings={() => setIsServerSettingsOpen(true)}
         onOpenCreateChannel={() => handleOpenCreateChannel()}
+        onOpenJoinServer={() => setIsJoinServerOpen(true)}
       />
 
       {/* 2. Direct Messages View or Server Workspace */}
@@ -172,6 +201,7 @@ export function App() {
             onOpenCreateChannel={handleOpenCreateChannel}
             onOpenServerSettings={() => setIsServerSettingsOpen(true)}
             onOpenInviteModal={() => setIsInviteOpen(true)}
+            onOpenJoinServer={() => setIsJoinServerOpen(true)}
           />
 
           {/* Main Stage (Header + Chat, Voice Room, or Empty Server State) */}
@@ -193,7 +223,7 @@ export function App() {
                   </div>
                   <h3 className="text-2xl font-bold text-white mb-2">No Channels In This Server Yet</h3>
                   <p className="text-discord-gray-400 max-w-md text-sm mb-6 leading-relaxed">
-                    Welcome to your private SquadSpace server! As the server administrator, start by creating your first text channel for chats or voice channel for hanging out.
+                    Welcome to your private SquadSpace server! Start by creating your first text channel for chats or voice channel for hanging out.
                   </p>
                   <div className="flex items-center gap-3">
                     <button
@@ -209,6 +239,13 @@ export function App() {
                     >
                       <UserPlus className="w-4 h-4" />
                       Invite Squad
+                    </button>
+                    <button
+                      onClick={() => setIsJoinServerOpen(true)}
+                      className="px-4 py-2.5 bg-discord-sidebar hover:bg-discord-hover text-discord-gray-300 text-sm font-semibold rounded-lg border border-discord-darkest transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Key className="w-3.5 h-3.5" />
+                      Join with Code
                     </button>
                   </div>
                 </div>
@@ -265,6 +302,11 @@ export function App() {
         onClose={() => setIsInviteOpen(false)}
       />
 
+      <JoinServerModal
+        isOpen={isJoinServerOpen}
+        onClose={() => setIsJoinServerOpen(false)}
+      />
+
       <GifPickerModal
         isOpen={isGifPickerOpen}
         onClose={() => setIsGifPickerOpen(false)}
@@ -284,6 +326,7 @@ export function App() {
       <AuthModal
         isOpen={!isAuthenticated || isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
+        initialInviteCode={urlInviteCode || undefined}
       />
     </div>
   );

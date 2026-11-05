@@ -1,31 +1,43 @@
-import React, { useState } from 'react';
-import { Shield, Key, User, Mail, Lock, Sparkles, ArrowRight, AlertCircle, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Shield, Key, User, Mail, Lock, Sparkles, ArrowRight, AlertCircle, CheckCircle2, Users } from 'lucide-react';
 import { authService } from '../../lib/authService';
 import { useAuthStore } from '../../store/useAuthStore';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose?: () => void;
+  initialInviteCode?: string;
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialInviteCode }) => {
   const [mode, setMode] = useState<'login' | 'register' | 'admin-setup'>('login');
+  const [adminExists, setAdminExists] = useState<boolean | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [inviteCode, setInviteCode] = useState('');
+  const [inviteCode, setInviteCode] = useState(initialInviteCode || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
+    if (initialInviteCode) {
+      setInviteCode(initialInviteCode);
+      setMode('register');
+    }
+  }, [initialInviteCode]);
+
+  useEffect(() => {
     authService.checkAdminExists().then((exists) => {
-      if (!exists) {
+      setAdminExists(exists);
+      if (!exists && !initialInviteCode) {
         setMode('admin-setup');
+      } else if (exists && mode === 'admin-setup') {
+        setMode(initialInviteCode ? 'register' : 'login');
       }
     });
-  }, []);
+  }, [initialInviteCode]);
 
   if (!isOpen) return null;
 
@@ -69,7 +81,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         if (res.error) {
           setError(res.error);
         } else {
-          setSuccessMsg(isAdmin ? 'Admin account created successfully!' : 'Account registered successfully!');
+          setSuccessMsg(isAdmin ? 'Founder admin account created!' : 'Joined SquadSpace successfully!');
           useAuthStore.setState({ currentUser: res.user, isAuthenticated: true });
           setTimeout(() => {
             if (onClose) onClose();
@@ -93,26 +105,40 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         {/* Branding & Header */}
         <div className="text-center mb-6">
           <div className="w-14 h-14 bg-discord-blurple rounded-2xl mx-auto flex items-center justify-center shadow-lg shadow-discord-blurple/30 mb-3">
-            <Sparkles className="w-7 h-7 text-white" />
+            {mode === 'admin-setup' ? (
+              <Shield className="w-7 h-7 text-white" />
+            ) : mode === 'register' ? (
+              <Users className="w-7 h-7 text-white" />
+            ) : (
+              <Sparkles className="w-7 h-7 text-white" />
+            )}
           </div>
 
           <h2 className="text-2xl font-bold text-white tracking-tight">
             {mode === 'login' && 'Welcome back!'}
-            {mode === 'register' && 'Create an account'}
+            {mode === 'register' && 'Join SquadSpace'}
             {mode === 'admin-setup' && 'Squad Administrator Setup'}
           </h2>
           <p className="text-xs text-discord-gray-400 mt-1">
-            {mode === 'login' && 'Private Discord-style hangout for our close squad.'}
+            {mode === 'login' && 'Log in to your squad account.'}
             {mode === 'register' && 'Enter your invite code to join this private server.'}
             {mode === 'admin-setup' && 'Initialize the founder account and squad server.'}
           </p>
+
+          {/* Invite Code Notice if prefilled */}
+          {mode === 'register' && initialInviteCode && (
+            <div className="mt-2.5 py-1 px-3 bg-discord-green/10 border border-discord-green/30 rounded-full inline-flex items-center gap-1.5 text-xs text-discord-green">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Invite code applied: <strong className="font-mono">{initialInviteCode}</strong></span>
+            </div>
+          )}
         </div>
 
         {/* Error Alert */}
         {error && (
-          <div className="mb-4 p-3 bg-discord-red/10 border border-discord-red/30 rounded-lg flex items-center gap-2 text-discord-red text-xs">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span>{error}</span>
+          <div className="mb-4 p-3 bg-discord-red/10 border border-discord-red/30 rounded-lg flex items-start gap-2 text-discord-red text-xs">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <span className="leading-relaxed">{error}</span>
           </div>
         )}
 
@@ -158,7 +184,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                     required
                     value={username}
                     onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-                    placeholder="e.g. alex_gg"
+                    placeholder="e.g. your_name"
                     className="w-full bg-transparent text-sm text-discord-gray-100 pl-9 pr-3 py-2.5 focus:outline-none"
                   />
                 </div>
@@ -192,8 +218,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
                       required
                       value={inviteCode}
                       onChange={(e) => setInviteCode(e.target.value)}
-                      placeholder="e.g. squad-private-2026"
-                      className="w-full bg-transparent text-sm text-discord-gray-100 pl-9 pr-3 py-2.5 font-mono focus:outline-none"
+                      placeholder="e.g. sqd-a1b2c3"
+                      className="w-full bg-transparent text-sm text-discord-gray-100 pl-9 pr-3 py-2.5 font-mono focus:outline-none uppercase"
                     />
                   </div>
                 </div>
@@ -224,7 +250,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-2 py-3 rounded-lg bg-discord-blurple hover:bg-discord-blurple-hover active:bg-discord-blurple-hover/90 disabled:opacity-50 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2"
+            className="w-full mt-2 py-3 rounded-lg bg-discord-blurple hover:bg-discord-blurple-hover active:bg-discord-blurple-hover/90 disabled:opacity-50 text-white font-bold text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
             {loading ? (
               <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -246,39 +272,45 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           {mode === 'login' ? (
             <>
               <div>
-                Need an account?{' '}
+                Have an invite code?{' '}
                 <button
+                  type="button"
                   onClick={() => {
                     setMode('register');
                     setError(null);
                   }}
-                  className="text-discord-blurple-light hover:underline font-semibold"
+                  className="text-discord-blurple-light hover:underline font-semibold cursor-pointer"
                 >
-                  Register with an invite code
+                  Register / Join Server
                 </button>
               </div>
-              <div>
-                First time server setup?{' '}
-                <button
-                  onClick={() => {
-                    setMode('admin-setup');
-                    setError(null);
-                  }}
-                  className="text-discord-green hover:underline font-semibold"
-                >
-                  Administrator setup
-                </button>
-              </div>
+
+              {adminExists === false && (
+                <div>
+                  First time server setup?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('admin-setup');
+                      setError(null);
+                    }}
+                    className="text-discord-green hover:underline font-semibold cursor-pointer"
+                  >
+                    Founder Administrator setup
+                  </button>
+                </div>
+              )}
             </>
           ) : (
             <div>
               Already have an account?{' '}
               <button
+                type="button"
                 onClick={() => {
                   setMode('login');
                   setError(null);
                 }}
-                className="text-discord-blurple-light hover:underline font-semibold"
+                className="text-discord-blurple-light hover:underline font-semibold cursor-pointer"
               >
                 Log In
               </button>

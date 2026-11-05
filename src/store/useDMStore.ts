@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Conversation, Message, UserProfile } from '../types';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { notificationService } from '../lib/notificationService';
 
 interface DMState {
@@ -12,7 +13,10 @@ interface DMState {
   startOrOpenDM: (friend: UserProfile, currentUser: UserProfile) => string;
   sendDM: (conversationId: string, content: string, currentUser: UserProfile) => void;
   removeFriend: (userId: string) => void;
-  addFriendByUsername: (username: string) => boolean;
+  addFriendByUsername: (
+    username: string,
+    currentUser?: UserProfile | null
+  ) => Promise<{ success: boolean; error?: string; friend?: UserProfile }>;
 }
 
 const DM_STORAGE_KEY = 'squadspace_dm_v2';
@@ -138,6 +142,19 @@ export const useDMStore = create<DMState>((set, get) => {
           message: newMsg,
         });
       }
+
+      if (isSupabaseConfigured && supabase) {
+        supabase
+          .from('direct_messages')
+          .insert({
+            conversation_id: conversationId.startsWith('dm-') ? undefined : conversationId,
+            sender_id: currentUser.id,
+            content,
+          })
+          .then(({ error }) => {
+            if (error) console.warn('Supabase DM sync note:', error.message);
+          });
+      }
     },
 
     removeFriend: (userId) => {
@@ -146,9 +163,56 @@ export const useDMStore = create<DMState>((set, get) => {
       }));
     },
 
-    addFriendByUsername: (username) => {
-      // Stub for real user addition
-      return false;
+    addFriendByUsername: async (username, currentUser) => {
+      const clean = username.toLowerCase().replace(/^@/, '').trim();
+      if (!clean) return { success: false, error: 'Please enter a username.' };
+
+      if (currentUser && currentUser.username.toLowerCase() === clean) {
+        return { success: false, error: 'You cannot add yourself as a friend.' };
+      }
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('username', clean)
+            .maybeSingle();
+
+          if (error || !profile) {
+            return {
+              success: false,
+              error: `User @${clean} not found. Make sure your friend has registered their account first!`,
+            };
+          }
+
+          const friend: UserProfile = {
+            id: profile.id,
+            username: profile.username,
+            displayName: profile.display_name,
+            avatarUrl: profile.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile.username}`,
+            status: profile.status || 'offline',
+            customStatus: profile.custom_status,
+            aboutMe: profile.about_me,
+            isAdmin: Boolean(profile.is_admin),
+          };
+
+          const existingFriends = get().friends;
+          if (!existingFriends.some((f) => f.id === friend.id)) {
+            set({ friends: [...existingFriends, friend] });
+          }
+
+          if (currentUser) {
+            get().startOrOpenDM(friend, currentUser);
+          }
+
+          return { success: true, friend };
+        } catch (err: any) {
+          return { success: false, error: err.message || 'Failed to search for user.' };
+        }
+      }
+
+      return { success: false, error: 'Database not connected.' };
     },
   };
 });

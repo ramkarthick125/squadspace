@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useDMStore } from '../../store/useDMStore';
 import { useAuthStore } from '../../store/useAuthStore';
+import { useServerStore } from '../../store/useServerStore';
 import { UserProfile, UserStatus } from '../../types';
 import { UserBottomBar } from '../layout/UserBottomBar';
 
@@ -27,6 +28,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   onOpenGifPicker,
 }) => {
   const { currentUser } = useAuthStore();
+  const { members } = useServerStore();
   const {
     conversations,
     activeConversationId,
@@ -43,10 +45,12 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   const [inputText, setInputText] = useState('');
   const [friendSearch, setFriendSearch] = useState('');
   const [inviteInput, setInviteInput] = useState('');
-  const [inviteSuccess, setInviteSuccess] = useState(false);
+  const [addFriendLoading, setAddFriendLoading] = useState(false);
+  const [addFriendError, setAddFriendError] = useState<string | null>(null);
+  const [addFriendSuccess, setAddFriendSuccess] = useState<string | null>(null);
 
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
-  const activeRecipient = activeConversation?.members[0];
+  const activeRecipient = activeConversation?.members.find((m) => m.id !== currentUser?.id) || activeConversation?.members[0];
   const messages = activeConversationId ? dmMessages[activeConversationId] || [] : [];
 
   const getStatusColor = (status: UserStatus) => {
@@ -63,12 +67,36 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   };
 
   const handleSendDM = () => {
-    if (!inputText.trim() || !activeConversationId) return;
+    if (!inputText.trim() || !activeConversationId || !currentUser) return;
     sendDM(activeConversationId, inputText.trim(), currentUser);
     setInputText('');
   };
 
-  const filteredFriends = friends.filter((f) => {
+  const handleAddFriendSubmit = async () => {
+    if (!inviteInput.trim()) return;
+    setAddFriendLoading(true);
+    setAddFriendError(null);
+    setAddFriendSuccess(null);
+
+    const res = await addFriendByUsername(inviteInput.trim(), currentUser);
+    setAddFriendLoading(false);
+
+    if (res.success && res.friend) {
+      setAddFriendSuccess(`Found and added @${res.friend.username} to your friends list!`);
+      setInviteInput('');
+      setActiveTab('chat');
+    } else {
+      setAddFriendError(res.error || 'Failed to add friend.');
+    }
+  };
+
+  // Combine custom friends with server squad members
+  const squadFriendsList = [
+    ...friends,
+    ...members.filter((m) => m.id !== currentUser?.id && !friends.some((f) => f.id === m.id)),
+  ];
+
+  const filteredFriends = squadFriendsList.filter((f) => {
     if (friendFilter === 'online') return f.status !== 'offline';
     return true;
   }).filter((f) =>
@@ -336,23 +364,23 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                     className="flex-1 bg-transparent text-sm text-discord-gray-100 placeholder-discord-gray-500 focus:outline-none"
                   />
                   <button
-                    onClick={() => {
-                      if (inviteInput.trim()) {
-                        addFriendByUsername(inviteInput.trim());
-                        setInviteSuccess(true);
-                        setTimeout(() => setInviteSuccess(false), 3000);
-                        setInviteInput('');
-                      }
-                    }}
-                    className="px-4 py-1.5 rounded bg-discord-blurple hover:bg-discord-blurple-hover text-white text-xs font-semibold transition-colors"
+                    onClick={handleAddFriendSubmit}
+                    disabled={addFriendLoading}
+                    className="px-4 py-1.5 rounded bg-discord-blurple hover:bg-discord-blurple-hover disabled:opacity-50 text-white text-xs font-semibold transition-colors cursor-pointer"
                   >
-                    Send Friend Request
+                    {addFriendLoading ? 'Searching...' : 'Send Friend Request'}
                   </button>
                 </div>
 
-                {inviteSuccess && (
+                {addFriendError && (
+                  <div className="p-3 bg-discord-red/10 border border-discord-red/30 rounded text-discord-red text-xs font-semibold">
+                    {addFriendError}
+                  </div>
+                )}
+
+                {addFriendSuccess && (
                   <div className="p-3 bg-discord-green/10 border border-discord-green/30 rounded text-discord-green text-xs font-semibold">
-                    Success! Your invite request has been sent to your friend.
+                    {addFriendSuccess}
                   </div>
                 )}
               </div>

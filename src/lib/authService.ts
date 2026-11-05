@@ -22,11 +22,16 @@ export const authService = {
   async checkAdminExists(): Promise<boolean> {
     if (!isSupabaseConfigured || !supabase) return false;
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('id')
         .eq('is_admin', true)
         .limit(1);
+
+      if (error) {
+        console.warn('checkAdminExists error:', error);
+        return false;
+      }
       return Boolean(data && data.length > 0);
     } catch {
       return false;
@@ -40,16 +45,7 @@ export const authService = {
     const { email, password, username, displayName, inviteCode, isAdminSetup } = params;
 
     if (!isSupabaseConfigured || !supabase) {
-      const localUser: UserProfile = {
-        id: `usr-${Date.now()}`,
-        username: username.toLowerCase().trim(),
-        displayName: displayName.trim() || username,
-        avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`,
-        status: 'online',
-        isAdmin: Boolean(isAdminSetup),
-      };
-      localStorage.setItem('squadspace_local_user', JSON.stringify(localUser));
-      return { user: localUser };
+      return { user: null, error: 'Database is not connected.' };
     }
 
     try {
@@ -62,21 +58,30 @@ export const authService = {
           .limit(1);
 
         if (existingAdmin && existingAdmin.length > 0) {
-          return { user: null, error: 'A Founder Administrator account already exists. Please log in or register with an invite code.' };
+          return {
+            user: null,
+            error: 'A Founder Administrator account already exists for this server. Please join with an invite code or log in.',
+          };
         }
       } else {
-        if (!inviteCode) {
-          return { user: null, error: 'Registration is invite-only. Please provide a valid invite code from your server admin.' };
+        if (!inviteCode || !inviteCode.trim()) {
+          return {
+            user: null,
+            error: 'Registration is invite-only. Please enter a valid invite code from your server administrator.',
+          };
         }
 
         const { data: invite, error: inviteErr } = await supabase
           .from('invitations')
           .select('*')
           .eq('code', inviteCode.trim())
-          .single();
+          .maybeSingle();
 
         if (inviteErr || !invite) {
-          return { user: null, error: 'Invalid or expired invite code.' };
+          return {
+            user: null,
+            error: `Invalid invite code "${inviteCode.trim()}". Please request an invite code from the server admin.`,
+          };
         }
 
         if (invite.max_uses && invite.uses >= invite.max_uses) {
@@ -115,6 +120,26 @@ export const authService = {
         return { user: null, error: authError?.message || 'Failed to create account.' };
       }
 
+      // If Supabase has "Confirm email" enabled, signIn to check session
+      let session = authData.session;
+      if (!session) {
+        const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+
+        if (signInErr) {
+          if (signInErr.message.toLowerCase().includes('email not confirmed')) {
+            return {
+              user: null,
+              error: 'Email confirmation is required by Supabase. To enable instant signup for friends without emails, go to Supabase Dashboard -> Authentication -> Providers -> Email and turn OFF "Confirm email".',
+            };
+          }
+          return { user: null, error: signInErr.message };
+        }
+        session = signInData.session;
+      }
+
       const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`;
 
       // 4. Create Profile Record
@@ -133,20 +158,62 @@ export const authService = {
         console.error('Profile creation error:', profileErr);
       }
 
-      // 5. If this is admin setup, create default server if not existing
+      // 5. Server Setup / Membership
       if (isAdminSetup) {
-        await supabase.from('servers').upsert({
-          name: 'SquadSpace Hangout',
-          owner_id: authData.user.id,
-        });
-      }
+        // Create server if none exists
+        const { data: existingServers } = await supabase.from('servers').select('id').limit(1);
+        let serverId = existingServers?.[0]?.id;
 
-      // 6. Increment Invite Code Uses if applicable
-      if (inviteCode && !isAdminSetup) {
-        try {
-          await supabase.rpc('increment_invite_uses', { p_code: inviteCode.trim() });
-        } catch {
-          // fallback silent catch
+        if (!serverId) {
+          const { data: newServer } = await supabase
+            .from('servers')
+            .insert({
+              name: 'SquadSpace Hangout',
+              owner_id: authData.user.id,
+            })
+            .select()
+            .single();
+          serverId = newServer?.id;
+        }
+
+        if (serverId) {
+          await supabase.from('server_members').upsert({
+            server_id: serverId,
+            user_id: authData.user.id,
+            role: 'owner',
+          });
+
+          // Generate first default invite code
+          const initialCode = 'sqd-' + Math.random().toString(36).substring(2, 8);
+          await supabase.from('invitations').insert({
+            code: initialCode,
+            server_id: serverId,
+            creator_id: authData.user.id,
+            max_uses: 25,
+            uses: 0,
+          });
+        }
+      } else if (inviteCode) {
+        // Increment invite uses
+        const { data: invRow } = await supabase
+          .from('invitations')
+          .select('uses, server_id')
+          .eq('code', inviteCode.trim())
+          .single();
+
+        if (invRow) {
+          await supabase
+            .from('invitations')
+            .update({ uses: (invRow.uses || 0) + 1 })
+            .eq('code', inviteCode.trim());
+
+          if (invRow.server_id) {
+            await supabase.from('server_members').upsert({
+              server_id: invRow.server_id,
+              user_id: authData.user.id,
+              role: 'member',
+            });
+          }
         }
       }
 
@@ -172,22 +239,7 @@ export const authService = {
     const { emailOrUsername, password } = params;
 
     if (!isSupabaseConfigured || !supabase) {
-      const saved = localStorage.getItem('squadspace_local_user');
-      if (saved) {
-        try {
-          return { user: JSON.parse(saved) };
-        } catch {}
-      }
-      const localUser: UserProfile = {
-        id: `usr-${Date.now()}`,
-        username: emailOrUsername.includes('@') ? emailOrUsername.split('@')[0] : emailOrUsername,
-        displayName: emailOrUsername.includes('@') ? emailOrUsername.split('@')[0] : emailOrUsername,
-        avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${emailOrUsername}`,
-        status: 'online',
-        isAdmin: true,
-      };
-      localStorage.setItem('squadspace_local_user', JSON.stringify(localUser));
-      return { user: localUser };
+      return { user: null, error: 'Database is not connected.' };
     }
 
     try {
@@ -202,7 +254,7 @@ export const authService = {
           .maybeSingle();
 
         if (!profile) {
-          return { user: null, error: 'User not found with this username.' };
+          return { user: null, error: 'No account found with this username.' };
         }
       }
 
@@ -212,6 +264,12 @@ export const authService = {
       });
 
       if (authError || !authData.user) {
+        if (authError?.message.toLowerCase().includes('email not confirmed')) {
+          return {
+            user: null,
+            error: 'Email confirmation is pending. To allow instant login without email verification, go to Supabase Dashboard -> Authentication -> Providers -> Email and turn OFF "Confirm email".',
+          };
+        }
         return { user: null, error: authError?.message || 'Invalid email or password.' };
       }
 
@@ -251,6 +309,49 @@ export const authService = {
   },
 
   /**
+   * Join server with invite code for an existing user
+   */
+  async joinServerWithCode(code: string, userId: string): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured || !supabase) return { success: false, error: 'Database not connected.' };
+
+    try {
+      const { data: invite, error } = await supabase
+        .from('invitations')
+        .select('*')
+        .eq('code', code.trim())
+        .maybeSingle();
+
+      if (error || !invite) {
+        return { success: false, error: 'Invalid or expired invite code.' };
+      }
+
+      if (invite.max_uses && invite.uses >= invite.max_uses) {
+        return { success: false, error: 'This invite code has reached its maximum uses.' };
+      }
+
+      const { data: servers } = await supabase.from('servers').select('id').limit(1);
+      const serverId = invite.server_id || servers?.[0]?.id;
+
+      if (serverId) {
+        await supabase.from('server_members').upsert({
+          server_id: serverId,
+          user_id: userId,
+          role: 'member',
+        });
+      }
+
+      await supabase
+        .from('invitations')
+        .update({ uses: (invite.uses || 0) + 1 })
+        .eq('code', code.trim());
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to join server.' };
+    }
+  },
+
+  /**
    * Log out current user
    */
   async logout(userId?: string): Promise<void> {
@@ -267,9 +368,7 @@ export const authService = {
    * Change user password
    */
   async changePassword(newPassword: string): Promise<{ success: boolean; error?: string }> {
-    if (!isSupabaseConfigured || !supabase) {
-      return { success: true };
-    }
+    if (!isSupabaseConfigured || !supabase) return { success: true };
 
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) {

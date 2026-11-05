@@ -303,3 +303,63 @@ BEGIN
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;
+
+-- ==============================================================================
+-- AUTOMATIC PROFILE & INSTANT EMAIL CONFIRMATION TRIGGER
+-- Allows friends to join instantly without email SMTP delays or "Email not confirmed"
+-- ==============================================================================
+
+-- 1. Auto-confirm email
+CREATE OR REPLACE FUNCTION public.handle_auto_confirm_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.email_confirmed_at = NOW();
+  NEW.confirmed_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS tr_auto_confirm_user ON auth.users;
+CREATE TRIGGER tr_auto_confirm_user
+  BEFORE INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_auto_confirm_user();
+
+-- Confirm any existing unconfirmed users
+UPDATE auth.users SET email_confirmed_at = NOW(), confirmed_at = NOW() WHERE email_confirmed_at IS NULL;
+
+-- 2. Auto-create Profile in public.profiles
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+DECLARE
+  existing_admin_count INTEGER;
+  chosen_username TEXT;
+  chosen_display_name TEXT;
+BEGIN
+  SELECT COUNT(*) INTO existing_admin_count FROM public.profiles WHERE is_admin = true;
+  
+  chosen_username := COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1));
+  chosen_display_name := COALESCE(NEW.raw_user_meta_data->>'display_name', split_part(NEW.email, '@', 1));
+
+  INSERT INTO public.profiles (id, username, display_name, avatar_url, status, is_admin)
+  VALUES (
+    NEW.id,
+    chosen_username,
+    chosen_display_name,
+    'https://api.dicebear.com/7.x/bottts/svg?seed=' || chosen_username,
+    'online',
+    CASE WHEN existing_admin_count = 0 THEN TRUE ELSE FALSE END
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    username = EXCLUDED.username,
+    display_name = EXCLUDED.display_name;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS tr_on_auth_user_created ON auth.users;
+CREATE TRIGGER tr_on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_new_user();
