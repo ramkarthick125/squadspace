@@ -10,13 +10,13 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialInviteCode }) => {
-  const [mode, setMode] = useState<'login' | 'register' | 'admin-setup'>('login');
-  const [adminExists, setAdminExists] = useState<boolean | null>(null);
+  const [tab, setTab] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [inviteCode, setInviteCode] = useState(initialInviteCode || '');
+  const [isFounderAdmin, setIsFounderAdmin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -24,19 +24,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialIn
   useEffect(() => {
     if (initialInviteCode) {
       setInviteCode(initialInviteCode);
-      setMode('register');
+      setTab('register');
     }
-  }, [initialInviteCode]);
-
-  useEffect(() => {
-    authService.checkAdminExists().then((exists) => {
-      setAdminExists(exists);
-      if (!exists && !initialInviteCode) {
-        setMode('admin-setup');
-      } else if (exists && mode === 'admin-setup') {
-        setMode(initialInviteCode ? 'register' : 'login');
-      }
-    });
   }, [initialInviteCode]);
 
   if (!isOpen) return null;
@@ -48,7 +37,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialIn
     setLoading(true);
 
     try {
-      if (mode === 'login') {
+      if (tab === 'login') {
         const res = await authService.login({
           emailOrUsername: email.trim(),
           password,
@@ -61,27 +50,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialIn
           if (onClose) onClose();
         }
       } else {
-        // Register or Admin Setup
+        // Register Account
         if (!username.trim()) {
           setError('Username is required.');
           setLoading(false);
           return;
         }
 
-        const isAdmin = mode === 'admin-setup';
         const res = await authService.register({
           email: email.trim(),
           password,
           username: username.trim(),
           displayName: displayName.trim() || username.trim(),
           inviteCode: inviteCode.trim(),
-          isAdminSetup: isAdmin,
+          isAdminSetup: isFounderAdmin,
         });
 
         if (res.error) {
           setError(res.error);
         } else {
-          setSuccessMsg(isAdmin ? 'Founder admin account created!' : 'Joined SquadSpace successfully!');
+          setSuccessMsg('Account created successfully! Welcome to SquadSpace.');
           useAuthStore.setState({ currentUser: res.user, isAuthenticated: true });
           setTimeout(() => {
             if (onClose) onClose();
@@ -89,7 +77,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialIn
         }
       }
     } catch (err: any) {
-      setError(err.message || 'An error occurred.');
+      setError(err.message || 'An error occurred during authentication.');
     } finally {
       setLoading(false);
     }
@@ -105,31 +93,53 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialIn
         {/* Branding & Header */}
         <div className="text-center mb-6">
           <div className="w-14 h-14 bg-discord-blurple rounded-2xl mx-auto flex items-center justify-center shadow-lg shadow-discord-blurple/30 mb-3">
-            {mode === 'admin-setup' ? (
-              <Shield className="w-7 h-7 text-white" />
-            ) : mode === 'register' ? (
-              <Users className="w-7 h-7 text-white" />
-            ) : (
-              <Sparkles className="w-7 h-7 text-white" />
-            )}
+            <Sparkles className="w-7 h-7 text-white" />
           </div>
 
           <h2 className="text-2xl font-bold text-white tracking-tight">
-            {mode === 'login' && 'Welcome back!'}
-            {mode === 'register' && 'Join SquadSpace'}
-            {mode === 'admin-setup' && 'Squad Administrator Setup'}
+            SquadSpace
           </h2>
           <p className="text-xs text-discord-gray-400 mt-1">
-            {mode === 'login' && 'Log in to your squad account.'}
-            {mode === 'register' && 'Enter your invite code to join this private server.'}
-            {mode === 'admin-setup' && 'Initialize the founder account and squad server.'}
+            Private squad voice, video & chat hangout.
           </p>
 
+          {/* Segmented Control Tabs */}
+          <div className="flex bg-discord-darkest rounded-xl p-1 mt-4 border border-discord-darkest">
+            <button
+              type="button"
+              onClick={() => {
+                setTab('login');
+                setError(null);
+              }}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                tab === 'login'
+                  ? 'bg-discord-blurple text-white shadow'
+                  : 'text-discord-gray-400 hover:text-discord-gray-200'
+              }`}
+            >
+              Log In
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTab('register');
+                setError(null);
+              }}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                tab === 'register'
+                  ? 'bg-discord-blurple text-white shadow'
+                  : 'text-discord-gray-400 hover:text-discord-gray-200'
+              }`}
+            >
+              Register Account
+            </button>
+          </div>
+
           {/* Invite Code Notice if prefilled */}
-          {mode === 'register' && initialInviteCode && (
-            <div className="mt-2.5 py-1 px-3 bg-discord-green/10 border border-discord-green/30 rounded-full inline-flex items-center gap-1.5 text-xs text-discord-green">
+          {tab === 'register' && initialInviteCode && (
+            <div className="mt-3 py-1 px-3 bg-discord-green/10 border border-discord-green/30 rounded-full inline-flex items-center gap-1.5 text-xs text-discord-green">
               <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Invite code applied: <strong className="font-mono">{initialInviteCode}</strong></span>
+              <span>Joining with code: <strong className="font-mono">{initialInviteCode}</strong></span>
             </div>
           )}
         </div>
@@ -152,30 +162,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialIn
 
         {/* Auth Form */}
         <form onSubmit={handleSubmit} className="space-y-3.5">
-          {/* Email or Username for Login */}
+          {/* Email or Username */}
           <div>
             <label className="block text-[11px] font-bold text-discord-gray-300 uppercase tracking-wider mb-1.5">
-              {mode === 'login' ? 'Email or Username' : 'Email Address'}
+              {tab === 'login' ? 'Email or Username' : 'Email Address'} <span className="text-discord-red">*</span>
             </label>
             <div className="relative flex items-center bg-discord-input rounded-lg border border-transparent focus-within:border-discord-blurple">
               <Mail className="w-4 h-4 text-discord-gray-400 absolute left-3 pointer-events-none" />
               <input
-                type={mode === 'login' ? 'text' : 'email'}
+                type={tab === 'login' ? 'text' : 'email'}
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder={mode === 'login' ? 'name@example.com or username' : 'name@example.com'}
+                placeholder={tab === 'login' ? 'Email address or username' : 'name@example.com'}
                 className="w-full bg-transparent text-sm text-discord-gray-100 pl-9 pr-3 py-2.5 focus:outline-none"
               />
             </div>
           </div>
 
           {/* Registration specific fields */}
-          {mode !== 'login' && (
+          {tab === 'register' && (
             <>
               <div>
                 <label className="block text-[11px] font-bold text-discord-gray-300 uppercase tracking-wider mb-1.5">
-                  Username (Unique)
+                  Username (Unique) <span className="text-discord-red">*</span>
                 </label>
                 <div className="relative flex items-center bg-discord-input rounded-lg border border-transparent focus-within:border-discord-blurple">
                   <User className="w-4 h-4 text-discord-gray-400 absolute left-3 pointer-events-none" />
@@ -184,7 +194,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialIn
                     required
                     value={username}
                     onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-                    placeholder="e.g. your_name"
+                    placeholder="e.g. alex"
                     className="w-full bg-transparent text-sm text-discord-gray-100 pl-9 pr-3 py-2.5 focus:outline-none"
                   />
                 </div>
@@ -198,39 +208,51 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialIn
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="How you appear to friends"
+                  placeholder="How your friends will see you"
                   className="w-full bg-discord-input rounded-lg text-sm text-discord-gray-100 px-3 py-2.5 border border-transparent focus:outline-none focus:border-discord-blurple"
                 />
               </div>
 
-              {mode === 'register' && (
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-[11px] font-bold text-discord-gray-300 uppercase tracking-wider">
-                      Invite Code <span className="text-discord-red">*</span>
-                    </label>
-                    <span className="text-[10px] text-discord-gray-500">Invite-only</span>
-                  </div>
-                  <div className="relative flex items-center bg-discord-input rounded-lg border border-transparent focus-within:border-discord-blurple">
-                    <Key className="w-4 h-4 text-discord-gray-400 absolute left-3 pointer-events-none" />
-                    <input
-                      type="text"
-                      required
-                      value={inviteCode}
-                      onChange={(e) => setInviteCode(e.target.value)}
-                      placeholder="e.g. sqd-a1b2c3"
-                      className="w-full bg-transparent text-sm text-discord-gray-100 pl-9 pr-3 py-2.5 font-mono focus:outline-none uppercase"
-                    />
-                  </div>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-bold text-discord-gray-300 uppercase tracking-wider">
+                    Invite Code
+                  </label>
+                  <span className="text-[10px] text-discord-gray-500">Optional for first founder</span>
                 </div>
-              )}
+                <div className="relative flex items-center bg-discord-input rounded-lg border border-transparent focus-within:border-discord-blurple">
+                  <Key className="w-4 h-4 text-discord-gray-400 absolute left-3 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={inviteCode}
+                    onChange={(e) => setInviteCode(e.target.value)}
+                    placeholder="e.g. sqd-a1b2c3 (Optional)"
+                    className="w-full bg-transparent text-sm text-discord-gray-100 pl-9 pr-3 py-2.5 font-mono focus:outline-none uppercase"
+                  />
+                </div>
+              </div>
+
+              {/* Founder / Admin toggle */}
+              <div className="flex items-center gap-2 pt-1 select-none">
+                <input
+                  type="checkbox"
+                  id="founderToggle"
+                  checked={isFounderAdmin}
+                  onChange={(e) => setIsFounderAdmin(e.target.checked)}
+                  className="rounded border-discord-darkest bg-discord-input text-discord-blurple focus:ring-0 cursor-pointer"
+                />
+                <label htmlFor="founderToggle" className="text-xs text-discord-gray-300 flex items-center gap-1 cursor-pointer">
+                  <Shield className="w-3.5 h-3.5 text-discord-blurple-light" />
+                  <span>Register as Server Founder / Administrator</span>
+                </label>
+              </div>
             </>
           )}
 
           {/* Password */}
           <div>
             <label className="block text-[11px] font-bold text-discord-gray-300 uppercase tracking-wider mb-1.5">
-              Password
+              Password <span className="text-discord-red">*</span>
             </label>
             <div className="relative flex items-center bg-discord-input rounded-lg border border-transparent focus-within:border-discord-blurple">
               <Lock className="w-4 h-4 text-discord-gray-400 absolute left-3 pointer-events-none" />
@@ -257,9 +279,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialIn
             ) : (
               <>
                 <span>
-                  {mode === 'login' && 'Log In'}
-                  {mode === 'register' && 'Join SquadSpace'}
-                  {mode === 'admin-setup' && 'Create Admin Account'}
+                  {tab === 'login' ? 'Log In to SquadSpace' : 'Create Squad Account'}
                 </span>
                 <ArrowRight className="w-4 h-4" />
               </>
@@ -267,54 +287,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialIn
           </button>
         </form>
 
-        {/* Mode Switcher Links */}
-        <div className="mt-6 pt-4 border-t border-discord-divider/40 text-xs text-discord-gray-400 space-y-2">
-          {mode === 'login' ? (
-            <>
-              <div>
-                Have an invite code?{' '}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode('register');
-                    setError(null);
-                  }}
-                  className="text-discord-blurple-light hover:underline font-semibold cursor-pointer"
-                >
-                  Register / Join Server
-                </button>
-              </div>
-
-              {adminExists === false && (
-                <div>
-                  First time server setup?{' '}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode('admin-setup');
-                      setError(null);
-                    }}
-                    className="text-discord-green hover:underline font-semibold cursor-pointer"
-                  >
-                    Founder Administrator setup
-                  </button>
-                </div>
-              )}
-            </>
+        {/* Footer info */}
+        <div className="mt-5 pt-3 border-t border-discord-darkest/40 text-center text-[11px] text-discord-gray-500">
+          {tab === 'login' ? (
+            <span>Don't have an account yet? Click Register Account above!</span>
           ) : (
-            <div>
-              Already have an account?{' '}
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('login');
-                  setError(null);
-                }}
-                className="text-discord-blurple-light hover:underline font-semibold cursor-pointer"
-              >
-                Log In
-              </button>
-            </div>
+            <span>Already have an account? Click Log In above!</span>
           )}
         </div>
       </div>

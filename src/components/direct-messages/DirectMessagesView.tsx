@@ -9,10 +9,12 @@ import {
   Trash2,
   Send,
   Sparkles,
+  Key,
 } from 'lucide-react';
 import { useDMStore } from '../../store/useDMStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useServerStore } from '../../store/useServerStore';
+import { authService } from '../../lib/authService';
 import { UserProfile, UserStatus } from '../../types';
 import { UserBottomBar } from '../layout/UserBottomBar';
 
@@ -28,13 +30,14 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   onOpenGifPicker,
 }) => {
   const { currentUser } = useAuthStore();
-  const { members } = useServerStore();
+  const { members, invites, serverName, fetchServerData, setActiveView } = useServerStore();
   const {
     conversations,
     activeConversationId,
     setActiveConversation,
     dmMessages,
     sendDM,
+    sendServerInviteDM,
     friends,
     startOrOpenDM,
     addFriendByUsername,
@@ -267,6 +270,79 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                     <p className="text-sm text-discord-gray-200 select-text leading-relaxed">
                       {msg.content}
                     </p>
+
+                    {/* Rich Cards for Server Invites and Friend Requests */}
+                    {msg.attachments?.map((att) => {
+                      if (att.type === 'server_invite') {
+                        return (
+                          <div
+                            key={att.id}
+                            className="mt-2.5 bg-[#2b2d31] border border-[#1e1f22] rounded-xl p-3.5 max-w-sm shadow-xl"
+                          >
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-discord-gray-400 block mb-2">
+                              You've Been Invited to Join a Server
+                            </span>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-11 h-11 rounded-2xl bg-discord-blurple flex items-center justify-center text-xl font-bold text-white shadow">
+                                  🚀
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="font-bold text-sm text-white truncate">
+                                    {att.name || 'SquadSpace Hangout'}
+                                  </div>
+                                  <div className="text-[11px] text-discord-gray-400 font-mono">
+                                    Code: {att.url}
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                onClick={async () => {
+                                  if (!currentUser) return;
+                                  const res = await authService.joinServerWithCode(att.url, currentUser.id);
+                                  if (res.success) {
+                                    await fetchServerData();
+                                    setActiveView('server');
+                                  } else {
+                                    alert(res.error || 'Failed to join server');
+                                  }
+                                }}
+                                className="px-3.5 py-1.5 rounded-lg bg-discord-green hover:bg-discord-green/90 text-white font-bold text-xs shadow transition flex-shrink-0 cursor-pointer"
+                              >
+                                Join Server
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      if (att.type === 'friend_invite') {
+                        return (
+                          <div
+                            key={att.id}
+                            className="mt-2 bg-[#2b2d31] border border-[#1e1f22] rounded-xl p-3 max-w-sm shadow flex items-center gap-2.5"
+                          >
+                            <UserPlus className="w-5 h-5 text-discord-green flex-shrink-0" />
+                            <div className="text-xs text-discord-gray-200">
+                              <strong>{msg.sender.displayName}</strong> connected with you as a friend!
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      if (att.type === 'image') {
+                        return (
+                          <img
+                            key={att.id}
+                            src={att.url}
+                            alt={att.name}
+                            className="max-w-xs max-h-60 rounded-lg mt-2 object-cover border border-discord-darkest"
+                          />
+                        );
+                      }
+
+                      return null;
+                    })}
                   </div>
                 </div>
               ))}
@@ -289,9 +365,25 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                 placeholder={`Message @${activeRecipient.displayName}`}
                 className="flex-1 bg-transparent text-sm text-discord-gray-100 placeholder-discord-gray-500 focus:outline-none"
               />
+
+              {/* Quick Send Server Invite in DM */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (currentUser && activeRecipient) {
+                    const invCode = invites[0]?.code || 'sqd-squad';
+                    sendServerInviteDM(activeRecipient, invCode, currentUser, serverName);
+                  }
+                }}
+                title="Send Server Invite to this user"
+                className="p-1.5 text-discord-gray-400 hover:text-discord-green rounded hover:bg-discord-hover transition"
+              >
+                <Key className="w-4 h-4" />
+              </button>
+
               <button
                 onClick={handleSendDM}
-                className="text-discord-blurple hover:text-discord-blurple-light p-1"
+                className="text-discord-blurple hover:text-discord-blurple-light p-1 cursor-pointer"
               >
                 <Send className="w-5 h-5" />
               </button>

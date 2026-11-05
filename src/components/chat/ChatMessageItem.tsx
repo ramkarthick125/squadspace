@@ -9,10 +9,13 @@ import {
   Shield,
   Check,
   X,
+  UserPlus,
 } from 'lucide-react';
 import { Message, UserProfile } from '../../types';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useChatStore } from '../../store/useChatStore';
+import { useServerStore } from '../../store/useServerStore';
+import { authService } from '../../lib/authService';
 
 interface ChatMessageItemProps {
   message: Message;
@@ -27,6 +30,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
 }) => {
   const { currentUser } = useAuthStore();
   const { editMessage, deleteMessage, toggleReaction, setReplyingTo, togglePin } = useChatStore();
+  const { fetchServerData } = useServerStore();
 
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
@@ -128,19 +132,78 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
           </p>
         )}
 
-        {/* Image Attachments */}
+        {/* Attachments & Rich Cards */}
         {message.attachments && message.attachments.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {message.attachments.map((att) => (
-              <div key={att.id} className="relative rounded-lg overflow-hidden border border-discord-darkest max-w-md">
-                <img
-                  src={att.url}
-                  alt={att.name}
-                  className="max-h-72 object-contain rounded-lg"
-                  loading="lazy"
-                />
-              </div>
-            ))}
+          <div className="mt-2 flex flex-col gap-2">
+            {message.attachments.map((att) => {
+              if (att.type === 'server_invite') {
+                return (
+                  <div
+                    key={att.id}
+                    className="bg-[#2b2d31] border border-[#1e1f22] rounded-xl p-3.5 max-w-sm shadow-xl select-none"
+                  >
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-discord-gray-400 block mb-2">
+                      You've Been Invited to Join a Server
+                    </span>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-11 h-11 rounded-2xl bg-discord-blurple flex items-center justify-center text-xl font-bold text-white shadow">
+                          🚀
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-bold text-sm text-white truncate">
+                            {att.name || 'SquadSpace Hangout'}
+                          </div>
+                          <div className="text-[11px] text-discord-gray-400 font-mono">
+                            Code: {att.url}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          if (!currentUser) return;
+                          const res = await authService.joinServerWithCode(att.url, currentUser.id);
+                          if (res.success) {
+                            await fetchServerData();
+                            alert('Successfully joined the server!');
+                          } else {
+                            alert(res.error || 'Failed to join server');
+                          }
+                        }}
+                        className="px-3.5 py-1.5 rounded-lg bg-discord-green hover:bg-discord-green/90 text-white font-bold text-xs shadow transition flex-shrink-0 cursor-pointer"
+                      >
+                        Join Server
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (att.type === 'friend_invite') {
+                return (
+                  <div
+                    key={att.id}
+                    className="bg-[#2b2d31] border border-[#1e1f22] rounded-xl p-3 max-w-sm shadow flex items-center gap-2.5 select-none"
+                  >
+                    <UserPlus className="w-5 h-5 text-discord-green flex-shrink-0" />
+                    <div className="text-xs text-discord-gray-200">
+                      <strong>{message.sender.displayName}</strong> connected with you as a friend!
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={att.id} className="relative rounded-lg overflow-hidden border border-discord-darkest max-w-md">
+                  <img
+                    src={att.url}
+                    alt={att.name}
+                    className="max-h-72 object-contain rounded-lg"
+                    loading="lazy"
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
 

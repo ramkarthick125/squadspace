@@ -58,11 +58,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             status: profile.status || 'online',
             customStatus: profile.custom_status,
             aboutMe: profile.about_me,
-            isAdmin: profile.is_admin,
+            isAdmin: Boolean(profile.is_admin),
           };
 
           // Mark online in database
           await supabase.from('profiles').update({ status: 'online' }).eq('id', profile.id);
+
+          set({ currentUser: user, isAuthenticated: true, isLoadingAuth: false });
+          return;
+        } else {
+          // Fallback to session user metadata if profile table row not yet created
+          const meta = session.user.user_metadata || {};
+          const user: UserProfile = {
+            id: session.user.id,
+            username: meta.username || session.user.email?.split('@')[0] || 'user',
+            displayName: meta.display_name || meta.username || 'Squad Member',
+            avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${meta.username || session.user.id}`,
+            status: 'online',
+            isAdmin: Boolean(meta.is_admin),
+          };
+
+          // Attempt to insert profile in background
+          Promise.resolve(
+            supabase.from('profiles').upsert({
+              id: user.id,
+              username: user.username,
+              display_name: user.displayName,
+              avatar_url: user.avatarUrl,
+              status: 'online',
+              is_admin: user.isAdmin,
+            })
+          ).catch(() => {});
 
           set({ currentUser: user, isAuthenticated: true, isLoadingAuth: false });
           return;

@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { Hash, Volume2, Pin, Users, Search, Download, Bell, BellOff } from 'lucide-react';
+import { Hash, Volume2, Pin, Users, Search, Download, Bell, BellOff, PhoneOff } from 'lucide-react';
 import { Channel } from '../../types';
 import { notificationService } from '../../lib/notificationService';
+import { useVoiceStore } from '../../store/useVoiceStore';
+import { useAuthStore } from '../../store/useAuthStore';
 
 interface AppHeaderProps {
   channel?: Channel;
@@ -20,6 +22,9 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   onInstallPWA,
   canInstallPWA,
 }) => {
+  const { currentUser } = useAuthStore();
+  const { activeVoiceChannelId, joinVoiceChannel, leaveVoiceChannel } = useVoiceStore();
+
   const [notificationsEnabled, setNotificationsEnabled] = useState(
     typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted'
   );
@@ -46,6 +51,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
   }
 
   const isText = channel.type === 'text';
+  const isVoiceConnected = activeVoiceChannelId === channel.id;
 
   return (
     <header className="h-12 bg-discord-chat border-b border-discord-darkest/70 px-4 flex items-center justify-between select-none z-10 shadow-sm">
@@ -54,7 +60,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
         {isText ? (
           <Hash className="w-6 h-6 text-discord-gray-400 flex-shrink-0" />
         ) : (
-          <Volume2 className="w-6 h-6 text-discord-gray-400 flex-shrink-0" />
+          <Volume2 className="w-6 h-6 text-discord-green flex-shrink-0" />
         )}
         <h1 className="font-bold text-discord-gray-100 text-base truncate">
           {channel.name}
@@ -72,6 +78,36 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
 
       {/* Right: Actions */}
       <div className="flex items-center gap-2.5 text-discord-gray-300">
+        {/* Prominent Voice Join / Leave Button in Header when in a voice channel */}
+        {!isText && currentUser && (
+          <button
+            onClick={() => {
+              if (isVoiceConnected) {
+                leaveVoiceChannel(currentUser);
+              } else {
+                joinVoiceChannel(channel.id, currentUser);
+              }
+            }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm ${
+              isVoiceConnected
+                ? 'bg-discord-red/20 hover:bg-discord-red text-discord-red hover:text-white border border-discord-red/40'
+                : 'bg-discord-green hover:bg-discord-green-hover text-white'
+            }`}
+          >
+            {isVoiceConnected ? (
+              <>
+                <PhoneOff className="w-3.5 h-3.5" />
+                <span>Disconnect Voice</span>
+              </>
+            ) : (
+              <>
+                <Volume2 className="w-3.5 h-3.5" />
+                <span>Join Voice Channel</span>
+              </>
+            )}
+          </button>
+        )}
+
         {/* Notifications Toggle */}
         <button
           onClick={handleToggleNotifications}
@@ -121,7 +157,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
           <Users className="w-5 h-5" />
         </button>
 
-        {/* Search Input Mock */}
+        {/* Search Input */}
         <div className="relative hidden lg:flex items-center">
           <input
             type="text"

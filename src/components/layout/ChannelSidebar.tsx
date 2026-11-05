@@ -201,6 +201,22 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                         {channel.name}
                       </span>
 
+                      {!isText && (
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleVoiceChannelClick(channel.id);
+                          }}
+                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition ${
+                            isVoiceConnected
+                              ? 'bg-discord-green/20 text-discord-green'
+                              : 'bg-discord-green text-white opacity-0 group-hover:opacity-100 hover:bg-discord-green-hover'
+                          }`}
+                        >
+                          {isVoiceConnected ? 'Connected' : 'Join'}
+                        </span>
+                      )}
+
                       {channel.isPrivate && (
                         <Lock className="w-3 h-3 text-discord-gray-500" />
                       )}
@@ -311,6 +327,22 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                           <span className="truncate font-medium flex-1 text-left">
                             {channel.name}
                           </span>
+
+                          {!isText && (
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleVoiceChannelClick(channel.id);
+                              }}
+                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded transition ${
+                                isVoiceConnected
+                                  ? 'bg-discord-green/20 text-discord-green'
+                                  : 'bg-discord-green text-white opacity-0 group-hover:opacity-100 hover:bg-discord-green-hover'
+                              }`}
+                            >
+                              {isVoiceConnected ? 'Connected' : 'Join'}
+                            </span>
+                          )}
 
                           {channel.isPrivate && (
                             <Lock className="w-3 h-3 text-discord-gray-500" />

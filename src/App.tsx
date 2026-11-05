@@ -305,6 +305,7 @@ export function App() {
       <JoinServerModal
         isOpen={isJoinServerOpen}
         onClose={() => setIsJoinServerOpen(false)}
+        initialCode={urlInviteCode || undefined}
       />
 
       <GifPickerModal

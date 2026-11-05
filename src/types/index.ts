@@ -42,7 +42,7 @@ export interface Channel {
 export interface MessageAttachment {
   id: string;
   url: string;
-  type: 'image' | 'video' | 'file';
+  type: 'image' | 'video' | 'file' | 'server_invite' | 'friend_invite';
   name: string;
   size?: number;
 }

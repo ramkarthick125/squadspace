@@ -113,6 +113,22 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
           </button>
         </div>
 
+        {/* Viewing Voice Channel Banner */}
+        {!isConnected && (
+          <div className="bg-discord-green/15 border-b border-discord-green/30 px-4 py-2.5 flex items-center justify-between flex-shrink-0">
+            <div className="flex items-center gap-2 text-xs text-discord-gray-200">
+              <span className="w-2 h-2 rounded-full bg-discord-green animate-pulse" />
+              <span>You are viewing <strong>#{channel.name}</strong>. Connect your audio to speak and listen!</span>
+            </div>
+            <button
+              onClick={() => currentUser && joinVoiceChannel(channel.id, currentUser)}
+              className="px-4 py-1.5 rounded-lg bg-discord-green hover:bg-discord-green-hover text-white text-xs font-bold shadow transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>Join Voice Channel</span>
+            </button>
+          </div>
+        )}
+
         {/* Participants Stage */}
         <div className="flex-1 p-6 overflow-y-auto flex items-center justify-center">
           {participants.length === 0 ? (

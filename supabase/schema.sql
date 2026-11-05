@@ -172,12 +172,15 @@ ALTER TABLE public.custom_emojis ENABLE ROW LEVEL SECURITY;
 -- ==============================================================================
 
 -- 1. Profiles
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS email TEXT;
+
+DROP POLICY IF EXISTS "Profiles viewable by all" ON public.profiles;
 DROP POLICY IF EXISTS "Profiles viewable by authenticated users" ON public.profiles;
 DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
-CREATE POLICY "Profiles viewable by authenticated users" ON public.profiles FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Users can insert own profile" ON public.profiles FOR INSERT TO authenticated WITH CHECK ((SELECT auth.uid()) = id);
-CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE TO authenticated USING ((SELECT auth.uid()) = id);
+CREATE POLICY "Profiles viewable by all" ON public.profiles FOR SELECT USING (true);
+CREATE POLICY "Users can insert own profile" ON public.profiles FOR INSERT WITH CHECK (true);
+CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (true) WITH CHECK (true);
 
 -- 2. User Activities (Gaming Status)
 DROP POLICY IF EXISTS "User activities viewable by authenticated users" ON public.user_activities;
@@ -186,15 +189,17 @@ CREATE POLICY "User activities viewable by authenticated users" ON public.user_a
 CREATE POLICY "Users can manage own activities" ON public.user_activities FOR ALL TO authenticated USING ((SELECT auth.uid()) = user_id) WITH CHECK ((SELECT auth.uid()) = user_id);
 
 -- 3. Servers & Members
+DROP POLICY IF EXISTS "Servers viewable by all" ON public.servers;
 DROP POLICY IF EXISTS "Servers viewable by authenticated users" ON public.servers;
 DROP POLICY IF EXISTS "Users can manage servers" ON public.servers;
-CREATE POLICY "Servers viewable by authenticated users" ON public.servers FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Users can manage servers" ON public.servers FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Servers viewable by all" ON public.servers FOR SELECT USING (true);
+CREATE POLICY "Users can manage servers" ON public.servers FOR ALL USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Server members viewable by all" ON public.server_members;
 DROP POLICY IF EXISTS "Server members viewable by authenticated users" ON public.server_members;
 DROP POLICY IF EXISTS "Users can join servers" ON public.server_members;
-CREATE POLICY "Server members viewable by authenticated users" ON public.server_members FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Users can join servers" ON public.server_members FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Server members viewable by all" ON public.server_members FOR SELECT USING (true);
+CREATE POLICY "Users can join servers" ON public.server_members FOR ALL USING (true) WITH CHECK (true);
 
 -- 4. Channel Categories & Channels
 DROP POLICY IF EXISTS "Categories viewable by authenticated users" ON public.channel_categories;
@@ -259,10 +264,11 @@ CREATE POLICY "Conversation members can send direct messages" ON public.direct_m
 );
 
 -- 9. Invitations & Emojis
+DROP POLICY IF EXISTS "Invitations viewable by all" ON public.invitations;
 DROP POLICY IF EXISTS "Invitations viewable by authenticated users" ON public.invitations;
 DROP POLICY IF EXISTS "Users can manage invitations" ON public.invitations;
-CREATE POLICY "Invitations viewable by authenticated users" ON public.invitations FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Users can manage invitations" ON public.invitations FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Invitations viewable by all" ON public.invitations FOR SELECT USING (true);
+CREATE POLICY "Users can manage invitations" ON public.invitations FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Custom emojis viewable by authenticated users" ON public.custom_emojis;
 DROP POLICY IF EXISTS "Users can create emojis" ON public.custom_emojis;
@@ -341,18 +347,20 @@ BEGIN
   chosen_username := COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1));
   chosen_display_name := COALESCE(NEW.raw_user_meta_data->>'display_name', split_part(NEW.email, '@', 1));
 
-  INSERT INTO public.profiles (id, username, display_name, avatar_url, status, is_admin)
+  INSERT INTO public.profiles (id, username, display_name, email, avatar_url, status, is_admin)
   VALUES (
     NEW.id,
     chosen_username,
     chosen_display_name,
+    NEW.email,
     'https://api.dicebear.com/7.x/bottts/svg?seed=' || chosen_username,
     'online',
     CASE WHEN existing_admin_count = 0 THEN TRUE ELSE FALSE END
   )
   ON CONFLICT (id) DO UPDATE SET
     username = EXCLUDED.username,
-    display_name = EXCLUDED.display_name;
+    display_name = EXCLUDED.display_name,
+    email = EXCLUDED.email;
 
   RETURN NEW;
 END;

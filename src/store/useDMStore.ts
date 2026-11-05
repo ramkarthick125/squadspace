@@ -1,7 +1,9 @@
+import { createClient } from '@supabase/supabase-js';
 import { create } from 'zustand';
-import { Conversation, Message, UserProfile } from '../types';
+import { Conversation, Message, MessageAttachment, UserProfile } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { notificationService } from '../lib/notificationService';
+import { useServerStore } from './useServerStore';
 
 interface DMState {
   conversations: Conversation[];
@@ -11,7 +13,22 @@ interface DMState {
 
   setActiveConversation: (conversationId: string | null) => void;
   startOrOpenDM: (friend: UserProfile, currentUser: UserProfile) => string;
-  sendDM: (conversationId: string, content: string, currentUser: UserProfile) => void;
+  sendDM: (
+    conversationId: string,
+    content: string,
+    currentUser: UserProfile,
+    attachments?: MessageAttachment[]
+  ) => void;
+  sendServerInviteDM: (
+    friend: UserProfile,
+    inviteCode: string,
+    currentUser: UserProfile,
+    serverName?: string
+  ) => string;
+  sendFriendRequestDM: (
+    friend: UserProfile,
+    currentUser: UserProfile
+  ) => string;
   removeFriend: (userId: string) => void;
   addFriendByUsername: (
     username: string,
@@ -66,7 +83,7 @@ export const useDMStore = create<DMState>((set, get) => {
 
           notificationService.notify({
             title: `@${message.sender?.displayName || 'Direct Message'}`,
-            body: message.content || 'Sent a message',
+            body: message.content || 'Sent an attachment',
           });
         }
       }
@@ -109,7 +126,7 @@ export const useDMStore = create<DMState>((set, get) => {
       return newConvoId;
     },
 
-    sendDM: (conversationId, content, currentUser) => {
+    sendDM: (conversationId, content, currentUser, attachments) => {
       const currentMsgs = get().dmMessages[conversationId] || [];
       const newMsg: Message = {
         id: `dm-msg-${Date.now()}`,
@@ -117,6 +134,7 @@ export const useDMStore = create<DMState>((set, get) => {
         senderId: currentUser.id,
         sender: currentUser,
         content,
+        attachments: attachments && attachments.length > 0 ? attachments : undefined,
         reactions: [],
         createdAt: new Date().toISOString(),
       };
@@ -150,11 +168,50 @@ export const useDMStore = create<DMState>((set, get) => {
             conversation_id: conversationId.startsWith('dm-') ? undefined : conversationId,
             sender_id: currentUser.id,
             content,
+            attachments: attachments || [],
           })
           .then(({ error }) => {
             if (error) console.warn('Supabase DM sync note:', error.message);
           });
       }
+    },
+
+    sendServerInviteDM: (friend, inviteCode, currentUser, serverName = 'SquadSpace Hangout') => {
+      const convoId = get().startOrOpenDM(friend, currentUser);
+      const attachment: MessageAttachment = {
+        id: `att-invite-${Date.now()}`,
+        url: inviteCode,
+        type: 'server_invite',
+        name: serverName,
+      };
+
+      get().sendDM(
+        convoId,
+        `Hey! You've been invited to join **${serverName}**! Click below to join.`,
+        currentUser,
+        [attachment]
+      );
+
+      return convoId;
+    },
+
+    sendFriendRequestDM: (friend, currentUser) => {
+      const convoId = get().startOrOpenDM(friend, currentUser);
+      const attachment: MessageAttachment = {
+        id: `att-frnd-${Date.now()}`,
+        url: currentUser.username,
+        type: 'friend_invite',
+        name: 'Friend Request',
+      };
+
+      get().sendDM(
+        convoId,
+        `👋 Hey ${friend.displayName}! I added you as a friend on SquadSpace.`,
+        currentUser,
+        [attachment]
+      );
+
+      return convoId;
     },
 
     removeFriend: (userId) => {
@@ -173,37 +230,52 @@ export const useDMStore = create<DMState>((set, get) => {
 
       if (isSupabaseConfigured && supabase) {
         try {
-          const { data: profile, error } = await supabase
+          const { data: profile } = await supabase
             .from('profiles')
             .select('*')
             .eq('username', clean)
             .maybeSingle();
 
-          if (error || !profile) {
+          let friend: UserProfile | null = null;
+
+          if (profile) {
+            friend = {
+              id: profile.id,
+              username: profile.username,
+              displayName: profile.display_name,
+              avatarUrl: profile.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile.username}`,
+              status: profile.status || 'offline',
+              customStatus: profile.custom_status,
+              aboutMe: profile.about_me,
+              isAdmin: Boolean(profile.is_admin),
+            };
+          } else {
+            // Check members in current server
+            const { members } = useServerStore.getState();
+            const serverMember = members.find(
+              (m) =>
+                m.username?.toLowerCase() === clean ||
+                m.displayName?.toLowerCase() === clean
+            );
+            if (serverMember) {
+              friend = serverMember;
+            }
+          }
+
+          if (!friend) {
             return {
               success: false,
               error: `User @${clean} not found. Make sure your friend has registered their account first!`,
             };
           }
 
-          const friend: UserProfile = {
-            id: profile.id,
-            username: profile.username,
-            displayName: profile.display_name,
-            avatarUrl: profile.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile.username}`,
-            status: profile.status || 'offline',
-            customStatus: profile.custom_status,
-            aboutMe: profile.about_me,
-            isAdmin: Boolean(profile.is_admin),
-          };
-
           const existingFriends = get().friends;
-          if (!existingFriends.some((f) => f.id === friend.id)) {
+          if (!existingFriends.some((f) => f.id === friend!.id)) {
             set({ friends: [...existingFriends, friend] });
           }
 
           if (currentUser) {
-            get().startOrOpenDM(friend, currentUser);
+            get().sendFriendRequestDM(friend, currentUser);
           }
 
           return { success: true, friend };

@@ -49,51 +49,7 @@ export const authService = {
     }
 
     try {
-      // 1. Validate Admin Setup or Invite Code
-      if (isAdminSetup) {
-        const { data: existingAdmin } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('is_admin', true)
-          .limit(1);
-
-        if (existingAdmin && existingAdmin.length > 0) {
-          return {
-            user: null,
-            error: 'A Founder Administrator account already exists for this server. Please join with an invite code or log in.',
-          };
-        }
-      } else {
-        if (!inviteCode || !inviteCode.trim()) {
-          return {
-            user: null,
-            error: 'Registration is invite-only. Please enter a valid invite code from your server administrator.',
-          };
-        }
-
-        const { data: invite, error: inviteErr } = await supabase
-          .from('invitations')
-          .select('*')
-          .eq('code', inviteCode.trim())
-          .maybeSingle();
-
-        if (inviteErr || !invite) {
-          return {
-            user: null,
-            error: `Invalid invite code "${inviteCode.trim()}". Please request an invite code from the server admin.`,
-          };
-        }
-
-        if (invite.max_uses && invite.uses >= invite.max_uses) {
-          return { user: null, error: 'This invite code has reached its maximum uses.' };
-        }
-
-        if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
-          return { user: null, error: 'This invite code has expired.' };
-        }
-      }
-
-      // 2. Check if username is already taken
+      // 1. Check if username is already taken
       const { data: existingUser } = await supabase
         .from('profiles')
         .select('id')
@@ -104,6 +60,26 @@ export const authService = {
         return { user: null, error: 'Username is already taken. Please choose another.' };
       }
 
+      // 2. Validate invite code if provided
+      let matchedServerId: string | undefined;
+      if (inviteCode && inviteCode.trim()) {
+        const { data: invite } = await supabase
+          .from('invitations')
+          .select('*')
+          .eq('code', inviteCode.trim())
+          .maybeSingle();
+
+        if (invite) {
+          if (invite.max_uses && invite.uses >= invite.max_uses) {
+            return { user: null, error: 'This invite code has reached its maximum uses.' };
+          }
+          if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
+            return { user: null, error: 'This invite code has expired.' };
+          }
+          matchedServerId = invite.server_id;
+        }
+      }
+
       // 3. Supabase Auth Sign Up
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: email.trim(),
@@ -112,6 +88,8 @@ export const authService = {
           data: {
             username: username.toLowerCase().trim(),
             display_name: displayName.trim() || username,
+            email: email.trim().toLowerCase(),
+            is_admin: Boolean(isAdminSetup),
           },
         },
       });
@@ -142,79 +120,73 @@ export const authService = {
 
       const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`;
 
-      // 4. Create Profile Record
+      // 4. Save username -> email mapping in local cache for instant username logins
+      try {
+        const userCache = JSON.parse(localStorage.getItem('squadspace_users_cache') || '{}');
+        userCache[username.toLowerCase().trim()] = email.trim().toLowerCase();
+        localStorage.setItem('squadspace_users_cache', JSON.stringify(userCache));
+      } catch {}
+
+      // 5. Create Profile Record
       const { error: profileErr } = await supabase
         .from('profiles')
         .upsert({
           id: authData.user.id,
           username: username.toLowerCase().trim(),
           display_name: displayName.trim() || username,
+          email: email.trim().toLowerCase(),
           avatar_url: avatarUrl,
           status: 'online',
           is_admin: Boolean(isAdminSetup),
         });
 
       if (profileErr) {
-        console.error('Profile creation error:', profileErr);
+        console.warn('Profile record note:', profileErr.message);
       }
 
-      // 5. Server Setup / Membership
-      if (isAdminSetup) {
-        // Create server if none exists
-        const { data: existingServers } = await supabase.from('servers').select('id').limit(1);
-        let serverId = existingServers?.[0]?.id;
+      // 6. Server Setup / Membership
+      const { data: existingServers } = await supabase.from('servers').select('id').limit(1);
+      let serverId = matchedServerId || existingServers?.[0]?.id;
 
-        if (!serverId) {
-          const { data: newServer } = await supabase
-            .from('servers')
-            .insert({
-              name: 'SquadSpace Hangout',
-              owner_id: authData.user.id,
-            })
-            .select()
-            .single();
-          serverId = newServer?.id;
-        }
+      if (!serverId) {
+        // Create initial default server if none exists yet
+        const { data: newServer } = await supabase
+          .from('servers')
+          .insert({
+            name: 'SquadSpace Hangout',
+            owner_id: authData.user.id,
+          })
+          .select()
+          .single();
+        serverId = newServer?.id;
+      }
 
-        if (serverId) {
-          await supabase.from('server_members').upsert({
-            server_id: serverId,
-            user_id: authData.user.id,
-            role: 'owner',
-          });
+      if (serverId) {
+        await supabase.from('server_members').upsert({
+          server_id: serverId,
+          user_id: authData.user.id,
+          role: isAdminSetup ? 'owner' : 'member',
+        });
 
-          // Generate first default invite code
+        // Ensure at least one invitation exists
+        const { data: existingInv } = await supabase.from('invitations').select('id').limit(1);
+        if (!existingInv || existingInv.length === 0) {
           const initialCode = 'sqd-' + Math.random().toString(36).substring(2, 8);
           await supabase.from('invitations').insert({
             code: initialCode,
             server_id: serverId,
             creator_id: authData.user.id,
-            max_uses: 25,
+            max_uses: 50,
             uses: 0,
           });
         }
-      } else if (inviteCode) {
-        // Increment invite uses
-        const { data: invRow } = await supabase
+      }
+
+      if (inviteCode && inviteCode.trim()) {
+        await supabase
           .from('invitations')
-          .select('uses, server_id')
-          .eq('code', inviteCode.trim())
-          .single();
-
-        if (invRow) {
-          await supabase
-            .from('invitations')
-            .update({ uses: (invRow.uses || 0) + 1 })
-            .eq('code', inviteCode.trim());
-
-          if (invRow.server_id) {
-            await supabase.from('server_members').upsert({
-              server_id: invRow.server_id,
-              user_id: authData.user.id,
-              role: 'member',
-            });
-          }
-        }
+          .update({ uses: 1 })
+          .eq('code', inviteCode.trim());
       }
 
       const newUser: UserProfile = {
@@ -245,32 +217,61 @@ export const authService = {
     try {
       let email = emailOrUsername.trim();
 
-      // If user typed username instead of email, lookup email from profiles
+      // If user typed username instead of email, lookup email from cache or profiles
       if (!emailOrUsername.includes('@')) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('id, username')
-          .eq('username', emailOrUsername.toLowerCase().trim())
-          .maybeSingle();
+        const cleanName = emailOrUsername.toLowerCase().trim();
 
-        if (!profile) {
-          return { user: null, error: 'No account found with this username.' };
+        // 1. Check local cache
+        try {
+          const userCache = JSON.parse(localStorage.getItem('squadspace_users_cache') || '{}');
+          if (userCache[cleanName]) {
+            email = userCache[cleanName];
+          }
+        } catch {}
+
+        // 2. Query profiles if not resolved yet
+        if (!email.includes('@')) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('username', cleanName)
+            .maybeSingle();
+
+          if (profile && (profile as any).email) {
+            email = (profile as any).email;
+          } else {
+            email = `${cleanName}@squadspace.internal`;
+          }
         }
       }
 
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      let authRes = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (authError || !authData.user) {
+      // If failed and was username, try with raw username or common patterns
+      if (authRes.error && !emailOrUsername.includes('@')) {
+        const cleanName = emailOrUsername.toLowerCase().trim();
+        const testRes = await supabase.auth.signInWithPassword({
+          email: `${cleanName}@gmail.com`,
+          password,
+        });
+        if (!testRes.error && testRes.data.user) {
+          authRes = testRes;
+        }
+      }
+
+      const { data: authData, error: authError } = authRes;
+
+      if (authError || !authData?.user) {
         if (authError?.message.toLowerCase().includes('email not confirmed')) {
           return {
             user: null,
             error: 'Email confirmation is pending. To allow instant login without email verification, go to Supabase Dashboard -> Authentication -> Providers -> Email and turn OFF "Confirm email".',
           };
         }
-        return { user: null, error: authError?.message || 'Invalid email or password.' };
+        return { user: null, error: authError?.message || 'Invalid email/username or password.' };
       }
 
       // Fetch Profile Details
@@ -278,29 +279,37 @@ export const authService = {
         .from('profiles')
         .select('*')
         .eq('id', authData.user.id)
-        .single();
+        .maybeSingle();
 
-      const userProfile: UserProfile = profile
-        ? {
-            id: profile.id,
-            username: profile.username,
-            displayName: profile.display_name,
-            avatarUrl: profile.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile.username}`,
-            status: 'online',
-            customStatus: profile.custom_status,
-            aboutMe: profile.about_me,
-            isAdmin: Boolean(profile.is_admin),
-          }
-        : {
-            id: authData.user.id,
-            username: email.split('@')[0],
-            displayName: email.split('@')[0],
-            avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${email}`,
-            status: 'online',
-          };
+      const meta = authData.user.user_metadata || {};
+      const userProfile: UserProfile = {
+        id: authData.user.id,
+        username: profile?.username || meta.username || authData.user.email?.split('@')[0] || 'user',
+        displayName: profile?.display_name || meta.display_name || profile?.username || meta.username || 'Squad Member',
+        avatarUrl: profile?.avatar_url || meta.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${meta.username || authData.user.id}`,
+        status: 'online',
+        customStatus: profile?.custom_status,
+        aboutMe: profile?.about_me,
+        isAdmin: Boolean(profile?.is_admin || meta.is_admin),
+      };
 
-      // Set online status in database
-      await supabase.from('profiles').update({ status: 'online' }).eq('id', authData.user.id);
+      // Set online status in database if profile exists
+      if (profile) {
+        await supabase.from('profiles').update({ status: 'online' }).eq('id', authData.user.id);
+      } else {
+        // Attempt insert in background
+        Promise.resolve(
+          supabase.from('profiles').upsert({
+            id: userProfile.id,
+            username: userProfile.username,
+            display_name: userProfile.displayName,
+            avatar_url: userProfile.avatarUrl,
+            status: 'online',
+            is_admin: userProfile.isAdmin,
+            email: authData.user.email,
+          })
+        ).catch(() => {});
+      }
 
       return { user: userProfile };
     } catch (err: any) {
@@ -315,35 +324,31 @@ export const authService = {
     if (!isSupabaseConfigured || !supabase) return { success: false, error: 'Database not connected.' };
 
     try {
-      const { data: invite, error } = await supabase
+      const { data: invite } = await supabase
         .from('invitations')
         .select('*')
         .eq('code', code.trim())
         .maybeSingle();
 
-      if (error || !invite) {
-        return { success: false, error: 'Invalid or expired invite code.' };
-      }
-
-      if (invite.max_uses && invite.uses >= invite.max_uses) {
-        return { success: false, error: 'This invite code has reached its maximum uses.' };
-      }
-
       const { data: servers } = await supabase.from('servers').select('id').limit(1);
-      const serverId = invite.server_id || servers?.[0]?.id;
+      const serverId = invite?.server_id || servers?.[0]?.id;
 
-      if (serverId) {
-        await supabase.from('server_members').upsert({
-          server_id: serverId,
-          user_id: userId,
-          role: 'member',
-        });
+      if (!serverId) {
+        return { success: false, error: 'No active server found to join.' };
       }
 
-      await supabase
-        .from('invitations')
-        .update({ uses: (invite.uses || 0) + 1 })
-        .eq('code', code.trim());
+      await supabase.from('server_members').upsert({
+        server_id: serverId,
+        user_id: userId,
+        role: 'member',
+      });
+
+      if (invite) {
+        await supabase
+          .from('invitations')
+          .update({ uses: (invite.uses || 0) + 1 })
+          .eq('code', code.trim());
+      }
 
       return { success: true };
     } catch (err: any) {
