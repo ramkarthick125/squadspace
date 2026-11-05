@@ -12,13 +12,23 @@ interface ProfileModalProps {
 export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onLogoutRequested }) => {
   const { currentUser, updateProfile, updateCustomStatus, updateGamingActivity, logout } = useAuthStore();
 
-  const [displayName, setDisplayName] = useState(currentUser.displayName);
-  const [aboutMe, setAboutMe] = useState(currentUser.aboutMe || '');
-  const [customStatus, setCustomStatus] = useState(currentUser.customStatus || '');
-  const [game, setGame] = useState(currentUser.gamingActivity?.game || '');
-  const [gameDetails, setGameDetails] = useState(currentUser.gamingActivity?.details || '');
+  const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
+  const [aboutMe, setAboutMe] = useState(currentUser?.aboutMe || '');
+  const [customStatus, setCustomStatus] = useState(currentUser?.customStatus || '');
+  const [game, setGame] = useState(currentUser?.gamingActivity?.game || '');
+  const [gameDetails, setGameDetails] = useState(currentUser?.gamingActivity?.details || '');
   const [activeTab, setActiveTab] = useState<'profile' | 'activity' | 'voice' | 'security'>('profile');
   const [savedNotification, setSavedNotification] = useState(false);
+
+  useEffect(() => {
+    if (currentUser) {
+      setDisplayName(currentUser.displayName || '');
+      setAboutMe(currentUser.aboutMe || '');
+      setCustomStatus(currentUser.customStatus || '');
+      setGame(currentUser.gamingActivity?.game || '');
+      setGameDetails(currentUser.gamingActivity?.details || '');
+    }
+  }, [currentUser]);
 
   // Live Mic Test State
   const [isTestingMic, setIsTestingMic] = useState(false);
@@ -84,7 +94,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !currentUser) return null;
 
   const handleSave = () => {
     updateProfile({

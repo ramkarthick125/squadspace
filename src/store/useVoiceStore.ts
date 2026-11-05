@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { UserProfile, VoiceParticipant } from '../types';
-import { MOCK_USERS } from '../mock/initialData';
 import { webrtcManager } from '../lib/webrtcManager';
 import { ScreenSharePreset, VoiceEngineMode } from '../lib/livekit';
+import { sounds } from '../lib/soundEffects';
 
 interface VoiceState {
   activeVoiceChannelId: string | null;
@@ -42,19 +42,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   screenShareParticipantId: null,
   screenShareStream: null,
   micVolumeLevel: 0,
-  participantsByChannel: {
-    'vc-general': [
-      {
-        userId: 'usr-2',
-        user: MOCK_USERS[1],
-        isMuted: false,
-        isDeafened: false,
-        isSpeaking: false,
-        isScreenSharing: false,
-        joinedAt: new Date(Date.now() - 600000).toISOString(),
-      },
-    ],
-  },
+  participantsByChannel: {},
 
   setEngineMode: (engineMode) => set({ engineMode }),
   setStreamQuality: (streamQuality) => set({ streamQuality }),
@@ -126,6 +114,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       participantsByChannel: updated,
     });
 
+    sounds.playJoinVoice();
     return true;
   },
 
@@ -163,6 +152,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       micVolumeLevel: 0,
       participantsByChannel: updated,
     });
+
+    sounds.playLeaveVoice();
   },
 
   toggleMute: () => {
@@ -170,6 +161,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     const newMuted = !isMuted;
 
     webrtcManager.setMuted(newMuted);
+
+    if (newMuted) {
+      sounds.playMute();
+    } else {
+      sounds.playUnmute();
+    }
 
     if (activeVoiceChannelId) {
       const channelParticipants = participantsByChannel[activeVoiceChannelId] || [];
@@ -240,6 +237,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
           [activeVoiceChannelId]: updatedParticipants,
         },
       });
+
+      sounds.playScreenShareStart();
     } else {
       webrtcManager.stopScreenShare();
 
@@ -257,6 +256,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
           [activeVoiceChannelId]: updatedParticipants,
         },
       });
+
+      sounds.playScreenShareStop();
     }
   },
 

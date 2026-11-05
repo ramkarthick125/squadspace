@@ -31,8 +31,8 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
 
-  const isAuthor = message.senderId === currentUser.id;
-  const canDelete = isAuthor || currentUser.isAdmin;
+  const isAuthor = currentUser ? message.senderId === currentUser.id : false;
+  const canDelete = isAuthor || Boolean(currentUser?.isAdmin);
 
   const handleSaveEdit = () => {
     if (editContent.trim()) {
@@ -148,11 +148,11 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
         {message.reactions && message.reactions.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-2 select-none">
             {message.reactions.map((reaction) => {
-              const hasReacted = reaction.users.includes(currentUser.id);
+              const hasReacted = currentUser ? reaction.users.includes(currentUser.id) : false;
               return (
                 <button
                   key={reaction.emoji}
-                  onClick={() => toggleReaction(channelId, message.id, reaction.emoji, currentUser.id)}
+                  onClick={() => currentUser && toggleReaction(channelId, message.id, reaction.emoji, currentUser.id)}
                   className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border transition-colors ${
                     hasReacted
                       ? 'bg-discord-blurple/20 border-discord-blurple text-discord-blurple-light'
@@ -174,7 +174,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
         {quickReactions.slice(0, 2).map((emoji) => (
           <button
             key={emoji}
-            onClick={() => toggleReaction(channelId, message.id, emoji, currentUser.id)}
+            onClick={() => currentUser && toggleReaction(channelId, message.id, emoji, currentUser.id)}
             className="p-1.5 hover:bg-discord-hover text-sm hover:text-white transition-colors"
             title={`React with ${emoji}`}
           >

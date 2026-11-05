@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { X, Copy, Check, Users } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Copy, Check, Users, Sparkles } from 'lucide-react';
 import { useServerStore } from '../../store/useServerStore';
+import { useAuthStore } from '../../store/useAuthStore';
 
 interface InviteModalProps {
   isOpen: boolean;
@@ -8,18 +9,36 @@ interface InviteModalProps {
 }
 
 export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => {
-  const { invites, serverName } = useServerStore();
+  const { invites, serverName, createInvite } = useServerStore();
+  const { currentUser } = useAuthStore();
   const [copied, setCopied] = useState(false);
+  const [activeCode, setActiveCode] = useState<string>('');
+
+  useEffect(() => {
+    if (isOpen) {
+      if (invites.length > 0) {
+        setActiveCode(invites[0].code);
+      } else if (currentUser) {
+        createInvite(currentUser.id).then((inv) => setActiveCode(inv.code));
+      }
+    }
+  }, [isOpen, invites.length, currentUser]);
 
   if (!isOpen) return null;
 
-  const activeInvite = invites[0] || { code: 'squad-private-2026' };
-  const inviteUrl = `https://squadspace.app/invite/${activeInvite.code}`;
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://squadspace.app';
+  const inviteUrl = `${currentOrigin}/?invite=${activeCode || 'squad'}`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(inviteUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCreateNew = async () => {
+    if (!currentUser) return;
+    const newInv = await createInvite(currentUser.id);
+    setActiveCode(newInv.code);
   };
 
   return (
@@ -44,23 +63,23 @@ export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => 
         {/* Content */}
         <div className="p-6 space-y-4">
           <p className="text-xs text-discord-gray-300">
-            Send this link to a friend to grant them access to this private server. SquadSpace registration is invite-only.
+            Send this invite code or link to your friends. Because SquadSpace is private, new users require a valid invite code to register.
           </p>
 
           <div>
             <label className="block text-[11px] font-bold text-discord-gray-400 uppercase tracking-wider mb-2">
-              Send a Server Invite Link
+              Server Invite Link
             </label>
             <div className="flex items-center bg-discord-input rounded-lg p-1.5 border border-discord-darkest">
               <input
                 type="text"
                 readOnly
                 value={inviteUrl}
-                className="flex-1 bg-transparent text-xs text-discord-gray-200 px-2 font-mono focus:outline-none"
+                className="flex-1 bg-transparent text-xs text-discord-gray-200 px-2 font-mono focus:outline-none truncate"
               />
               <button
                 onClick={handleCopy}
-                className="px-4 py-1.5 rounded bg-discord-blurple hover:bg-discord-blurple-hover text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                className="px-4 py-1.5 rounded bg-discord-blurple hover:bg-discord-blurple-hover text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
               >
                 {copied ? (
                   <>
@@ -77,9 +96,19 @@ export const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose }) => 
             </div>
           </div>
 
-          <div className="text-[11px] text-discord-gray-400 flex items-center justify-between">
-            <span>Invite code: <strong className="font-mono text-discord-blurple-light">{activeInvite.code}</strong></span>
-            <span>Never expires</span>
+          <div className="flex items-center justify-between p-3 rounded-lg bg-discord-sidebar/60 border border-discord-darkest text-xs">
+            <div>
+              <span className="text-discord-gray-400 block text-[11px]">Invite Code</span>
+              <strong className="font-mono text-discord-blurple-light text-sm">{activeCode || 'Loading...'}</strong>
+            </div>
+
+            <button
+              onClick={handleCreateNew}
+              className="text-xs text-discord-gray-300 hover:text-white flex items-center gap-1 px-2.5 py-1 rounded bg-discord-hover transition"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-discord-yellow" />
+              Generate New
+            </button>
           </div>
         </div>
       </div>

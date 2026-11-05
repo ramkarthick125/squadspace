@@ -26,11 +26,11 @@ export const ChannelModal: React.FC<ChannelModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
-    const newChannel = addChannel({
+    const newChannel = await addChannel({
       name: name.trim(),
       type,
       categoryId: categoryId || undefined,

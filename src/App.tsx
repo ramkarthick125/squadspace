@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Hash, Plus, UserPlus, Sparkles } from 'lucide-react';
 import { ServerRail } from './components/layout/ServerRail';
 import { ChannelSidebar } from './components/layout/ChannelSidebar';
 import { AppHeader } from './components/layout/AppHeader';
@@ -21,9 +22,9 @@ import { useAuthStore } from './store/useAuthStore';
 import { ChannelType } from './types';
 
 export function App() {
-  const { channels, activeChannelId, activeView } = useServerStore();
-  const { sendMessage, toggleReaction } = useChatStore();
-  const { currentUser, isAuthenticated } = useAuthStore();
+  const { channels, activeChannelId, activeView, fetchServerData } = useServerStore();
+  const { sendMessage, toggleReaction, fetchChannelMessages } = useChatStore();
+  const { currentUser, isAuthenticated, isLoadingAuth, checkSession } = useAuthStore();
 
   // Layout states
   const [showMemberList, setShowMemberList] = useState(true);
@@ -44,7 +45,26 @@ export function App() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [canInstallPWA, setCanInstallPWA] = useState(false);
 
-  // Initialize Supabase Realtime subscriptions
+  // 1. Check Auth Session on initial load
+  useEffect(() => {
+    checkSession();
+  }, [checkSession]);
+
+  // 2. Fetch server data when authenticated
+  useEffect(() => {
+    if (isAuthenticated && currentUser) {
+      fetchServerData();
+    }
+  }, [isAuthenticated, currentUser?.id, fetchServerData]);
+
+  // 3. Fetch channel messages whenever active channel changes
+  useEffect(() => {
+    if (activeChannelId) {
+      fetchChannelMessages(activeChannelId);
+    }
+  }, [activeChannelId, fetchChannelMessages]);
+
+  // 4. Initialize Supabase Realtime subscriptions
   useEffect(() => {
     if (isAuthenticated && currentUser) {
       const cleanup = realtimeService.initRealtimeSubscriptions(currentUser);
@@ -82,7 +102,7 @@ export function App() {
   };
 
   const handleSelectGif = (gifUrl: string) => {
-    if (!activeChannel) return;
+    if (!activeChannel || !currentUser) return;
     sendMessage(activeChannel.id, '', currentUser, [
       {
         id: `att-gif-${Date.now()}`,
@@ -94,7 +114,7 @@ export function App() {
   };
 
   const handleSelectEmoji = (emoji: string) => {
-    if (!activeChannel) return;
+    if (!activeChannel || !currentUser) return;
 
     if (targetMessageIdForEmoji) {
       toggleReaction(activeChannel.id, targetMessageIdForEmoji, emoji, currentUser.id);
@@ -108,6 +128,19 @@ export function App() {
     setTargetMessageIdForEmoji(messageId);
     setIsEmojiPickerOpen(true);
   };
+
+  // Loading state while checking authentication
+  if (isLoadingAuth) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen w-screen bg-discord-darkest text-discord-gray-200 select-none">
+        <div className="w-16 h-16 rounded-3xl bg-discord-blurple flex items-center justify-center shadow-2xl mb-4 animate-pulse">
+          <Sparkles className="w-8 h-8 text-white" />
+        </div>
+        <h2 className="text-lg font-bold text-white tracking-wide">Connecting to SquadSpace...</h2>
+        <p className="text-xs text-discord-gray-400 mt-1">Preparing your private communications</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-discord-darkest text-discord-gray-200 select-none font-sans">
@@ -141,7 +174,7 @@ export function App() {
             onOpenInviteModal={() => setIsInviteOpen(true)}
           />
 
-          {/* Main Stage (Header + Chat or Voice Room) */}
+          {/* Main Stage (Header + Chat, Voice Room, or Empty Server State) */}
           <div className="flex-1 flex flex-col min-w-0 h-full">
             <AppHeader
               channel={activeChannel}
@@ -152,8 +185,34 @@ export function App() {
             />
 
             <div className="flex-1 flex min-w-0 h-[calc(100vh-48px)] overflow-hidden">
-              {/* Channel Content Stage */}
-              {activeChannel?.type === 'text' ? (
+              {/* Empty Server Welcome State (When zero channels exist) */}
+              {!activeChannel ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-discord-chat">
+                  <div className="w-16 h-16 rounded-3xl bg-discord-blurple/20 flex items-center justify-center mb-4 text-discord-blurple shadow-lg">
+                    <Hash className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-white mb-2">No Channels In This Server Yet</h3>
+                  <p className="text-discord-gray-400 max-w-md text-sm mb-6 leading-relaxed">
+                    Welcome to your private SquadSpace server! As the server administrator, start by creating your first text channel for chats or voice channel for hanging out.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => handleOpenCreateChannel(undefined, 'text')}
+                      className="px-5 py-2.5 bg-discord-blurple hover:bg-discord-blurple-hover text-white text-sm font-semibold rounded-lg shadow transition flex items-center gap-2 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Create First Channel
+                    </button>
+                    <button
+                      onClick={() => setIsInviteOpen(true)}
+                      className="px-5 py-2.5 bg-discord-dark hover:bg-discord-hover text-discord-gray-200 text-sm font-semibold rounded-lg border border-discord-darkest transition flex items-center gap-2 cursor-pointer"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      Invite Squad
+                    </button>
+                  </div>
+                </div>
+              ) : activeChannel.type === 'text' ? (
                 <ChatArea
                   channel={activeChannel}
                   onOpenEmojiPicker={() => {
@@ -221,7 +280,7 @@ export function App() {
         onSelectEmoji={handleSelectEmoji}
       />
 
-      {/* Auth Modal (Triggered on Logout or when unauthenticated) */}
+      {/* Auth Modal (Prompted when not logged in or on explicit logout) */}
       <AuthModal
         isOpen={!isAuthenticated || isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}

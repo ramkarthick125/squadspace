@@ -114,6 +114,20 @@ export const realtimeService = {
           useChatStore.setState({ messagesByChannel: updatedByChannel });
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'channels' },
+        () => {
+          useServerStore.getState().fetchServerData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'channel_categories' },
+        () => {
+          useServerStore.getState().fetchServerData();
+        }
+      )
       .subscribe();
 
     // 2. Broadcast Channel for Live Typing & Presence

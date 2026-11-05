@@ -23,7 +23,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSend = () => {
-    if (!text.trim() && attachments.length === 0) return;
+    if (!currentUser || (!text.trim() && attachments.length === 0)) return;
 
     sendMessage(channel.id, text.trim(), currentUser, attachments);
     setText('');
@@ -133,7 +133,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             value={text}
             onChange={(e) => {
               setText(e.target.value);
-              setTyping(channel.id, currentUser.username, e.target.value.length > 0);
+              if (currentUser) {
+                setTyping(channel.id, currentUser.username, e.target.value.length > 0);
+              }
             }}
             onKeyDown={handleKeyDown}
             placeholder={`Message #${channel.name}`}

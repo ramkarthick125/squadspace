@@ -47,7 +47,7 @@ export const ServerSettingsModal: React.FC<ServerSettingsModalProps> = ({
 
   const handleAddEmoji = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!emojiName.trim() || !emojiUrl.trim()) return;
+    if (!currentUser || !emojiName.trim() || !emojiUrl.trim()) return;
 
     addCustomEmoji(emojiName.trim(), emojiUrl.trim(), currentUser.id);
     setEmojiName('');
@@ -55,7 +55,8 @@ export const ServerSettingsModal: React.FC<ServerSettingsModalProps> = ({
   };
 
   const handleCopyInvite = (code: string) => {
-    navigator.clipboard.writeText(`https://squadspace.app/invite/${code}`);
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://squadspace.app';
+    navigator.clipboard.writeText(`${origin}/?invite=${code}`);
     setCopiedCode(code);
     setTimeout(() => setCopiedCode(null), 2000);
   };

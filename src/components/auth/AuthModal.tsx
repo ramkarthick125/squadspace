@@ -9,8 +9,6 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
-  const { setCurrentUser, setIsAuthenticated } = useAuthStore() as any;
-
   const [mode, setMode] = useState<'login' | 'register' | 'admin-setup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,6 +18,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    authService.checkAdminExists().then((exists) => {
+      if (!exists) {
+        setMode('admin-setup');
+      }
+    });
+  }, []);
 
   if (!isOpen) return null;
 

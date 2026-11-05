@@ -32,7 +32,18 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
     }
   };
 
-  if (!channel) return null;
+  if (!channel) {
+    return (
+      <header className="h-12 bg-discord-chat border-b border-discord-darkest/70 px-4 flex items-center justify-between select-none z-10 shadow-sm">
+        <div className="flex items-center gap-2 min-w-0">
+          <Hash className="w-6 h-6 text-discord-gray-400 flex-shrink-0" />
+          <h1 className="font-bold text-discord-gray-100 text-base truncate">
+            SquadSpace Hangout
+          </h1>
+        </div>
+      </header>
+    );
+  }
 
   const isText = channel.type === 'text';
 

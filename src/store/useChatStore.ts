@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { Message, MessageAttachment, UserProfile } from '../types';
-import { MOCK_MESSAGES } from '../mock/initialData';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { notificationService } from '../lib/notificationService';
 
@@ -9,6 +8,7 @@ interface ChatState {
   replyingTo: Message | null;
   typingUsersByChannel: Record<string, string[]>;
   setReplyingTo: (message: Message | null) => void;
+  fetchChannelMessages: (channelId: string) => Promise<void>;
   sendMessage: (
     channelId: string,
     content: string,
@@ -22,20 +22,17 @@ interface ChatState {
   setTyping: (channelId: string, username: string, isTyping: boolean) => void;
 }
 
-const STORAGE_KEY = 'squadspace_messages_store_v1';
+const STORAGE_KEY = 'squadspace_messages_v2';
 
-// Load persisted messages or fallback to default channels
 function getInitialMessages(): Record<string, Message[]> {
-  if (typeof window === 'undefined') return MOCK_MESSAGES;
+  if (typeof window === 'undefined') return {};
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      return JSON.parse(saved);
-    }
+    if (saved) return JSON.parse(saved);
   } catch (err) {
     console.warn('Failed to parse saved messages:', err);
   }
-  return MOCK_MESSAGES;
+  return {};
 }
 
 function persistMessages(messages: Record<string, Message[]>) {
@@ -48,17 +45,22 @@ function persistMessages(messages: Record<string, Message[]>) {
   }
 }
 
-// Inter-tab / local network sync channel
+function generateId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'msg-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9);
+}
+
 const chatBroadcast = typeof window !== 'undefined' ? new BroadcastChannel('squadspace_chat_sync') : null;
 
 export const useChatStore = create<ChatState>((set, get) => {
-  // Listen for real-time messages from other tabs/windows
   if (chatBroadcast) {
     chatBroadcast.onmessage = (event) => {
       const data = event.data;
       if (!data) return;
 
-      const { messagesByChannel, typingUsersByChannel } = get();
+      const { messagesByChannel } = get();
 
       if (data.type === 'new_message') {
         const { channelId, message } = data;
@@ -71,9 +73,8 @@ export const useChatStore = create<ChatState>((set, get) => {
           set({ messagesByChannel: updated });
           persistMessages(updated);
 
-          // Play notification chime and notify
           notificationService.notify({
-            title: `#${channelId} — ${message.sender.displayName}`,
+            title: `#${channelId} — ${message.sender?.displayName || 'New message'}`,
             body: message.content || 'Sent an attachment',
             channelId,
           });
@@ -115,12 +116,91 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     setReplyingTo: (replyingTo) => set({ replyingTo }),
 
+    fetchChannelMessages: async (channelId: string) => {
+      if (!channelId) return;
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          const { data: dbMessages } = await supabase
+            .from('messages')
+            .select(`
+              id,
+              channel_id,
+              sender_id,
+              content,
+              attachments,
+              reply_to_id,
+              is_pinned,
+              is_edited,
+              created_at,
+              profiles:sender_id (id, username, display_name, avatar_url, is_admin)
+            `)
+            .eq('channel_id', channelId)
+            .order('created_at', { ascending: true });
+
+          if (dbMessages) {
+            const msgIds = dbMessages.map((m: any) => m.id);
+            const { data: dbReactions } = await supabase
+              .from('message_reactions')
+              .select('*')
+              .in('message_id', msgIds);
+
+            const reactionsByMsg: Record<string, { emoji: string; users: string[]; count: number }[]> = {};
+            (dbReactions || []).forEach((r: any) => {
+              if (!reactionsByMsg[r.message_id]) reactionsByMsg[r.message_id] = [];
+              const existing = reactionsByMsg[r.message_id].find((x) => x.emoji === r.emoji);
+              if (existing) {
+                existing.users.push(r.user_id);
+                existing.count++;
+              } else {
+                reactionsByMsg[r.message_id].push({ emoji: r.emoji, users: [r.user_id], count: 1 });
+              }
+            });
+
+            const parsed: Message[] = dbMessages.map((m: any) => {
+              const profile = m.profiles || {};
+              return {
+                id: m.id,
+                channelId: m.channel_id,
+                senderId: m.sender_id,
+                sender: {
+                  id: profile.id || m.sender_id,
+                  username: profile.username || 'user',
+                  displayName: profile.display_name || profile.username || 'User',
+                  avatarUrl: profile.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile.username || 'user'}`,
+                  status: 'online',
+                  isAdmin: Boolean(profile.is_admin),
+                },
+                content: m.content,
+                attachments: m.attachments,
+                replyTo: m.reply_to_id ? { id: m.reply_to_id, senderUsername: '', content: '' } : undefined,
+                reactions: reactionsByMsg[m.id] || [],
+                isPinned: Boolean(m.is_pinned),
+                isEdited: Boolean(m.is_edited),
+                createdAt: m.created_at,
+              };
+            });
+
+            set((state) => ({
+              messagesByChannel: {
+                ...state.messagesByChannel,
+                [channelId]: parsed,
+              },
+            }));
+          }
+        } catch (err) {
+          console.warn('Failed to load messages from Supabase:', err);
+        }
+      }
+    },
+
     sendMessage: async (channelId, content, currentUser, attachments) => {
       const { messagesByChannel, replyingTo } = get();
       const channelMsgs = messagesByChannel[channelId] || [];
+      const newId = generateId();
 
       const newMessage: Message = {
-        id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        id: newId,
         channelId,
         senderId: currentUser.id,
         sender: currentUser,
@@ -149,7 +229,6 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       persistMessages(updated);
 
-      // Broadcast to other open browser tabs
       if (chatBroadcast) {
         chatBroadcast.postMessage({
           type: 'new_message',
@@ -158,21 +237,19 @@ export const useChatStore = create<ChatState>((set, get) => {
         });
       }
 
-      // Sync to Supabase if configured
       if (isSupabaseConfigured && supabase) {
-        supabase
-          .from('messages')
-          .insert({
-            id: newMessage.id.startsWith('msg-') ? undefined : newMessage.id,
+        try {
+          await supabase.from('messages').insert({
+            id: newId,
             channel_id: channelId,
             sender_id: currentUser.id,
             content,
             attachments: attachments || [],
-            reply_to_id: replyingTo?.id,
-          })
-          .then(({ error }) => {
-            if (error) console.warn('Supabase message sync note:', error.message);
+            reply_to_id: replyingTo?.id || null,
           });
+        } catch (err) {
+          console.error('Supabase message insert error:', err);
+        }
       }
     },
 
@@ -200,7 +277,11 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
 
       if (isSupabaseConfigured && supabase) {
-        supabase.from('messages').update({ content: newContent, is_edited: true }).eq('id', messageId);
+        try {
+          await supabase.from('messages').update({ content: newContent, is_edited: true }).eq('id', messageId);
+        } catch (err) {
+          console.error('Supabase message update error:', err);
+        }
       }
     },
 
@@ -225,13 +306,19 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
 
       if (isSupabaseConfigured && supabase) {
-        supabase.from('messages').delete().eq('id', messageId);
+        try {
+          await supabase.from('messages').delete().eq('id', messageId);
+        } catch (err) {
+          console.error('Supabase message delete error:', err);
+        }
       }
     },
 
     toggleReaction: async (channelId, messageId, emoji, userId) => {
       const { messagesByChannel } = get();
       const channelMsgs = messagesByChannel[channelId] || [];
+
+      let hasReacted = false;
 
       const updated = {
         ...messagesByChannel,
@@ -242,7 +329,7 @@ export const useChatStore = create<ChatState>((set, get) => {
           let newReactions;
 
           if (existingReaction) {
-            const hasReacted = existingReaction.users.includes(userId);
+            hasReacted = existingReaction.users.includes(userId);
             if (hasReacted) {
               const updatedUsers = existingReaction.users.filter((id) => id !== userId);
               if (updatedUsers.length === 0) {
@@ -253,9 +340,10 @@ export const useChatStore = create<ChatState>((set, get) => {
                 );
               }
             } else {
-              const updatedUsers = [...existingReaction.users, userId];
               newReactions = m.reactions.map((r) =>
-                r.emoji === emoji ? { ...r, users: updatedUsers, count: updatedUsers.length } : r
+                r.emoji === emoji
+                  ? { ...r, users: [...r.users, userId], count: r.count + 1 }
+                  : r
               );
             }
           } else {
@@ -268,32 +356,70 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       set({ messagesByChannel: updated });
       persistMessages(updated);
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          if (hasReacted) {
+            await supabase
+              .from('message_reactions')
+              .delete()
+              .eq('message_id', messageId)
+              .eq('user_id', userId)
+              .eq('emoji', emoji);
+          } else {
+            await supabase.from('message_reactions').insert({
+              message_id: messageId,
+              user_id: userId,
+              emoji,
+            });
+          }
+        } catch (err) {
+          console.error('Supabase reaction sync error:', err);
+        }
+      }
     },
 
     togglePin: async (channelId, messageId) => {
       const { messagesByChannel } = get();
       const channelMsgs = messagesByChannel[channelId] || [];
 
+      let newPinState = false;
       const updated = {
         ...messagesByChannel,
-        [channelId]: channelMsgs.map((m) =>
-          m.id === messageId ? { ...m, isPinned: !m.isPinned } : m
-        ),
+        [channelId]: channelMsgs.map((m) => {
+          if (m.id === messageId) {
+            newPinState = !m.isPinned;
+            return { ...m, isPinned: newPinState };
+          }
+          return m;
+        }),
       };
 
       set({ messagesByChannel: updated });
       persistMessages(updated);
+
+      if (isSupabaseConfigured && supabase) {
+        try {
+          await supabase.from('messages').update({ is_pinned: newPinState }).eq('id', messageId);
+        } catch (err) {
+          console.error('Supabase pin sync error:', err);
+        }
+      }
     },
 
     setTyping: (channelId, username, isTyping) => {
       const { typingUsersByChannel } = get();
-      const current = typingUsersByChannel[channelId] || [];
+      const currentTyping = typingUsersByChannel[channelId] || [];
 
-      let updated: string[];
+      let updated;
       if (isTyping) {
-        updated = current.includes(username) ? current : [...current, username];
+        if (!currentTyping.includes(username)) {
+          updated = [...currentTyping, username];
+        } else {
+          updated = currentTyping;
+        }
       } else {
-        updated = current.filter((u) => u !== username);
+        updated = currentTyping.filter((u) => u !== username);
       }
 
       set({
@@ -302,15 +428,6 @@ export const useChatStore = create<ChatState>((set, get) => {
           [channelId]: updated,
         },
       });
-
-      if (chatBroadcast && isTyping) {
-        chatBroadcast.postMessage({
-          type: 'typing',
-          channelId,
-          username,
-          isTyping,
-        });
-      }
     },
   };
 });

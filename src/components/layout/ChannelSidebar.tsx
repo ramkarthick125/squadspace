@@ -7,7 +7,6 @@ import {
   Lock,
   UserPlus,
   Settings,
-  FolderPlus,
   MicOff,
   ScreenShare,
 } from 'lucide-react';
@@ -46,15 +45,19 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   };
 
   const handleVoiceChannelClick = (channelId: string) => {
-    // If clicking the currently connected voice channel, switch active view to show its room
+    if (!currentUser) return;
     if (activeVoiceChannelId === channelId) {
       setActiveChannel(channelId);
       return;
     }
-    // Connect to this voice room and show it
     joinVoiceChannel(channelId, currentUser);
     setActiveChannel(channelId);
   };
+
+  // Channels not assigned to any existing category
+  const uncategorizedChannels = channels.filter(
+    (c) => !c.categoryId || !categories.some((cat) => cat.id === c.categoryId)
+  );
 
   return (
     <aside className="w-60 bg-discord-sidebar flex flex-col flex-shrink-0 select-none border-r border-discord-darkest/40">
@@ -119,13 +122,118 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
 
       {/* Channels List Area */}
       <div className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
+        {/* Empty Server Notice */}
+        {channels.length === 0 && (
+          <div className="px-3 py-6 text-center">
+            <p className="text-xs text-discord-gray-400 mb-3">No channels created yet</p>
+            <button
+              onClick={() => onOpenCreateChannel()}
+              className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-discord-blurple hover:bg-discord-blurple-hover text-white text-xs font-semibold rounded-md transition shadow"
+            >
+              <Plus className="w-4 h-4" />
+              Create First Channel
+            </button>
+          </div>
+        )}
+
+        {/* Uncategorized Channels */}
+        {uncategorizedChannels.length > 0 && (
+          <div className="space-y-0.5">
+            <div className="flex items-center justify-between px-2 py-1 text-xs font-bold text-discord-gray-400 tracking-wider group hover:text-discord-gray-200">
+              <span className="uppercase">CHANNELS</span>
+              <button
+                onClick={() => onOpenCreateChannel(undefined, 'text')}
+                title="Create Channel"
+                className="opacity-0 group-hover:opacity-100 hover:text-discord-gray-100 transition-opacity p-0.5"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="space-y-0.5 mt-0.5">
+              {uncategorizedChannels.map((channel) => {
+                const isText = channel.type === 'text';
+                const isActive = activeChannelId === channel.id;
+                const isVoiceConnected = activeVoiceChannelId === channel.id;
+                const participants = participantsByChannel[channel.id] || [];
+
+                return (
+                  <div key={channel.id} className="space-y-0.5">
+                    <button
+                      onClick={() => {
+                        if (isText) {
+                          setActiveChannel(channel.id);
+                        } else {
+                          handleVoiceChannelClick(channel.id);
+                        }
+                      }}
+                      className={`w-full group flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors ${
+                        isActive
+                          ? 'bg-discord-active text-white'
+                          : 'text-discord-gray-400 hover:bg-discord-hover hover:text-discord-gray-200'
+                      }`}
+                    >
+                      {isText ? (
+                        <Hash className="w-4 h-4 text-discord-gray-400 flex-shrink-0" />
+                      ) : (
+                        <Volume2
+                          className={`w-4 h-4 flex-shrink-0 ${
+                            isVoiceConnected ? 'text-discord-green' : 'text-discord-gray-400'
+                          }`}
+                        />
+                      )}
+
+                      <span className="truncate font-medium flex-1 text-left">
+                        {channel.name}
+                      </span>
+
+                      {channel.isPrivate && (
+                        <Lock className="w-3 h-3 text-discord-gray-500" />
+                      )}
+                    </button>
+
+                    {!isText && participants.length > 0 && (
+                      <div className="pl-6 pr-2 py-1 space-y-1">
+                        {participants.map((participant) => (
+                          <div
+                            key={participant.userId}
+                            className="flex items-center gap-2 py-1 px-1.5 rounded hover:bg-discord-hover/50 text-xs text-discord-gray-300"
+                          >
+                            <img
+                              src={participant.user?.avatarUrl}
+                              alt={participant.user?.displayName || 'User'}
+                              className={`w-5 h-5 rounded-full object-cover ${
+                                participant.isSpeaking ? 'speaking-indicator' : ''
+                              }`}
+                            />
+                            <span className="truncate flex-1 font-medium">
+                              {participant.user?.displayName || 'User'}
+                            </span>
+
+                            {participant.isScreenSharing && (
+                              <ScreenShare className="w-3 h-3 text-discord-green" />
+                            )}
+                            {participant.isMuted && (
+                              <MicOff className="w-3 h-3 text-discord-red" />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Categorized Channels */}
         {categories.map((category) => {
           const isCollapsed = collapsedCategories[category.id];
           const categoryChannels = channels.filter((c) => c.categoryId === category.id);
 
           return (
             <div key={category.id} className="space-y-0.5">
-              {/* Category Header */}
               <div className="flex items-center justify-between px-2 py-1 text-xs font-bold text-discord-gray-400 tracking-wider group hover:text-discord-gray-200 cursor-pointer">
                 <div
                   onClick={() => toggleCategory(category.id)}
@@ -152,7 +260,6 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                 </button>
               </div>
 
-              {/* Channels inside this category */}
               {!isCollapsed && (
                 <div className="space-y-0.5 mt-0.5">
                   {categoryChannels.map((channel) => {
@@ -196,7 +303,6 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                           )}
                         </button>
 
-                        {/* Connected Voice Members List underneath voice channel */}
                         {!isText && participants.length > 0 && (
                           <div className="pl-6 pr-2 py-1 space-y-1">
                             {participants.map((participant) => (
@@ -204,29 +310,22 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                                 key={participant.userId}
                                 className="flex items-center gap-2 py-1 px-1.5 rounded hover:bg-discord-hover/50 text-xs text-discord-gray-300"
                               >
-                                <div className="relative">
-                                  <img
-                                    src={participant.user.avatarUrl}
-                                    alt={participant.user.displayName}
-                                    className={`w-5 h-5 rounded-full object-cover ${
-                                      participant.isSpeaking ? 'speaking-indicator' : ''
-                                    }`}
-                                  />
-                                </div>
+                                <img
+                                  src={participant.user?.avatarUrl}
+                                  alt={participant.user?.displayName || 'User'}
+                                  className={`w-5 h-5 rounded-full object-cover ${
+                                    participant.isSpeaking ? 'speaking-indicator' : ''
+                                  }`}
+                                />
                                 <span className="truncate flex-1 font-medium">
-                                  {participant.user.displayName}
+                                  {participant.user?.displayName || 'User'}
                                 </span>
 
                                 {participant.isScreenSharing && (
-                                  <span title="Sharing Screen">
-                                    <ScreenShare className="w-3 h-3 text-discord-green" />
-                                  </span>
+                                  <ScreenShare className="w-3 h-3 text-discord-green" />
                                 )}
-
                                 {participant.isMuted && (
-                                  <span title="Muted">
-                                    <MicOff className="w-3 h-3 text-discord-red" />
-                                  </span>
+                                  <MicOff className="w-3 h-3 text-discord-red" />
                                 )}
                               </div>
                             ))}
@@ -242,7 +341,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
         })}
       </div>
 
-      {/* Connected Voice Quick Card if active in voice */}
+      {/* Connected Voice Quick Card */}
       {activeVoiceChannelId && (
         <div className="bg-[#232428] border-t border-discord-darkest px-3 py-2 flex items-center justify-between text-xs">
           <div className="flex flex-col">
@@ -256,7 +355,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
           </div>
 
           <button
-            onClick={() => leaveVoiceChannel(currentUser)}
+            onClick={() => currentUser && leaveVoiceChannel(currentUser)}
             title="Disconnect Voice"
             className="p-1 rounded hover:bg-discord-hover text-discord-red hover:text-discord-red"
           >

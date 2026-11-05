@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { Conversation, Message, UserProfile } from '../types';
-import { MOCK_USERS } from '../mock/initialData';
 import { notificationService } from '../lib/notificationService';
 
 interface DMState {
@@ -16,7 +15,7 @@ interface DMState {
   addFriendByUsername: (username: string) => boolean;
 }
 
-const DM_STORAGE_KEY = 'squadspace_dm_store_v1';
+const DM_STORAGE_KEY = 'squadspace_dm_v2';
 
 function getInitialDMMessages(): Record<string, Message[]> {
   if (typeof window === 'undefined') return {};
@@ -26,48 +25,7 @@ function getInitialDMMessages(): Record<string, Message[]> {
   } catch (err) {
     console.warn('Failed to parse saved DMs:', err);
   }
-  return {
-    'dm-marcus': [
-      {
-        id: 'dm-msg-1',
-        conversationId: 'dm-marcus',
-        senderId: 'usr-2',
-        sender: MOCK_USERS[1],
-        content: 'Hey Alex, are we playing tonight?',
-        reactions: [],
-        createdAt: new Date(Date.now() - 7200000).toISOString(),
-      },
-      {
-        id: 'dm-msg-2',
-        conversationId: 'dm-marcus',
-        senderId: 'usr-admin-1',
-        sender: MOCK_USERS[0],
-        content: 'Yeah for sure! Just finishing up the voice channel updates for SquadSpace.',
-        reactions: [{ emoji: '🔥', users: ['usr-2'], count: 1 }],
-        createdAt: new Date(Date.now() - 5400000).toISOString(),
-      },
-      {
-        id: 'dm-msg-3',
-        conversationId: 'dm-marcus',
-        senderId: 'usr-2',
-        sender: MOCK_USERS[1],
-        content: 'Hop on whenever you are free!',
-        reactions: [],
-        createdAt: new Date(Date.now() - 3600000).toISOString(),
-      },
-    ],
-    'dm-elena': [
-      {
-        id: 'dm-msg-e1',
-        conversationId: 'dm-elena',
-        senderId: 'usr-3',
-        sender: MOCK_USERS[2],
-        content: 'Sent you the new build screenshots!',
-        reactions: [],
-        createdAt: new Date(Date.now() - 7200000).toISOString(),
-      },
-    ],
-  };
+  return {};
 }
 
 function persistDMs(msgs: Record<string, Message[]>) {
@@ -103,9 +61,8 @@ export const useDMStore = create<DMState>((set, get) => {
           persistDMs(updated);
 
           notificationService.notify({
-            title: `DM from ${message.sender.displayName}`,
-            body: message.content,
-            isDM: true,
+            title: `@${message.sender?.displayName || 'Direct Message'}`,
+            body: message.content || 'Sent a message',
           });
         }
       }
@@ -113,46 +70,17 @@ export const useDMStore = create<DMState>((set, get) => {
   }
 
   return {
-    friends: MOCK_USERS.filter((u) => u.id !== 'usr-admin-1'),
-    activeConversationId: 'dm-marcus',
-    conversations: [
-      {
-        id: 'dm-marcus',
-        isGroup: false,
-        members: [MOCK_USERS[1]],
-        unreadCount: 0,
-        lastMessage: {
-          id: 'dm-m-1',
-          senderId: 'usr-2',
-          sender: MOCK_USERS[1],
-          content: 'Hop on whenever you are free!',
-          reactions: [],
-          createdAt: new Date(Date.now() - 3600000).toISOString(),
-        },
-      },
-      {
-        id: 'dm-elena',
-        isGroup: false,
-        members: [MOCK_USERS[2]],
-        unreadCount: 1,
-        lastMessage: {
-          id: 'dm-e-1',
-          senderId: 'usr-3',
-          sender: MOCK_USERS[2],
-          content: 'Sent you the new build screenshots!',
-          reactions: [],
-          createdAt: new Date(Date.now() - 7200000).toISOString(),
-        },
-      },
-    ],
+    conversations: [],
+    activeConversationId: null,
     dmMessages: getInitialDMMessages(),
+    friends: [],
 
-    setActiveConversation: (activeConversationId) => set({ activeConversationId }),
+    setActiveConversation: (conversationId) => set({ activeConversationId: conversationId }),
 
     startOrOpenDM: (friend, currentUser) => {
       const { conversations } = get();
-      const existing = conversations.find(
-        (c) => !c.isGroup && c.members.some((m) => m.id === friend.id)
+      const existing = conversations.find((c) =>
+        c.members.some((m) => m.id === friend.id) && c.members.some((m) => m.id === currentUser.id)
       );
 
       if (existing) {
@@ -160,32 +88,27 @@ export const useDMStore = create<DMState>((set, get) => {
         return existing.id;
       }
 
-      const newId = `dm-${friend.id}-${Date.now()}`;
-      const newConv: Conversation = {
-        id: newId,
+      const newConvoId = `dm-${friend.username}-${Date.now()}`;
+      const newConvo: Conversation = {
+        id: newConvoId,
         isGroup: false,
-        members: [friend],
+        name: friend.displayName,
+        members: [currentUser, friend],
         unreadCount: 0,
       };
 
       set({
-        conversations: [newConv, ...conversations],
-        activeConversationId: newId,
-        dmMessages: {
-          ...get().dmMessages,
-          [newId]: [],
-        },
+        conversations: [newConvo, ...conversations],
+        activeConversationId: newConvoId,
       });
 
-      return newId;
+      return newConvoId;
     },
 
     sendDM: (conversationId, content, currentUser) => {
-      const { dmMessages, conversations } = get();
-      const currentMsgs = dmMessages[conversationId] || [];
-
+      const currentMsgs = get().dmMessages[conversationId] || [];
       const newMsg: Message = {
-        id: `dm-m-${Date.now()}`,
+        id: `dm-msg-${Date.now()}`,
         conversationId,
         senderId: currentUser.id,
         sender: currentUser,
@@ -195,13 +118,13 @@ export const useDMStore = create<DMState>((set, get) => {
       };
 
       const updated = {
-        ...dmMessages,
+        ...get().dmMessages,
         [conversationId]: [...currentMsgs, newMsg],
       };
 
       set({
         dmMessages: updated,
-        conversations: conversations.map((c) =>
+        conversations: get().conversations.map((c) =>
           c.id === conversationId ? { ...c, lastMessage: newMsg } : c
         ),
       });
@@ -217,27 +140,15 @@ export const useDMStore = create<DMState>((set, get) => {
       }
     },
 
-    removeFriend: (userId) =>
+    removeFriend: (userId) => {
       set((state) => ({
         friends: state.friends.filter((f) => f.id !== userId),
-      })),
+      }));
+    },
 
-    addFriendByUsername: (username: string) => {
-      const { friends } = get();
-      const clean = username.trim().toLowerCase().replace('@', '');
-      const existing = friends.find((f) => f.username.toLowerCase() === clean);
-      if (existing) return false;
-
-      const newFriend: UserProfile = {
-        id: `usr-${Date.now()}`,
-        username: clean,
-        displayName: clean,
-        avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${clean}`,
-        status: 'online',
-      };
-
-      set({ friends: [...friends, newFriend] });
-      return true;
+    addFriendByUsername: (username) => {
+      // Stub for real user addition
+      return false;
     },
   };
 });

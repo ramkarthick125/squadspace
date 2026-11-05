@@ -13,6 +13,8 @@ export const UserBottomBar: React.FC<UserBottomBarProps> = ({ onOpenSettings }) 
   const { isMuted, isDeafened, toggleMute, toggleDeafen, activeVoiceChannelId } = useVoiceStore();
   const [showStatusMenu, setShowStatusMenu] = useState(false);
 
+  if (!currentUser) return null;
+
   const getStatusColor = (status: UserStatus) => {
     switch (status) {
       case 'online':

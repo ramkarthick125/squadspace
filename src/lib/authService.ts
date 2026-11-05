@@ -1,6 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import { UserProfile } from '../types';
-import { CURRENT_USER } from '../mock/initialData';
 
 export interface RegisterParams {
   email: string;
@@ -18,13 +17,29 @@ export interface LoginParams {
 
 export const authService = {
   /**
-   * Register a new user with invite-only verification
+   * Check if any admin account has already been registered
    */
-  async register(params: RegisterParams): Promise<{ user: UserProfile; error?: string }> {
+  async checkAdminExists(): Promise<boolean> {
+    if (!isSupabaseConfigured || !supabase) return false;
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('is_admin', true)
+        .limit(1);
+      return Boolean(data && data.length > 0);
+    } catch {
+      return false;
+    }
+  },
+
+  /**
+   * Register a new user with invite-only verification or founder admin setup
+   */
+  async register(params: RegisterParams): Promise<{ user: UserProfile | null; error?: string }> {
     const { email, password, username, displayName, inviteCode, isAdminSetup } = params;
 
     if (!isSupabaseConfigured || !supabase) {
-      console.info('Supabase not configured in .env. Running in local dev session mode.');
       const localUser: UserProfile = {
         id: `usr-${Date.now()}`,
         username: username.toLowerCase().trim(),
@@ -33,14 +48,25 @@ export const authService = {
         status: 'online',
         isAdmin: Boolean(isAdminSetup),
       };
+      localStorage.setItem('squadspace_local_user', JSON.stringify(localUser));
       return { user: localUser };
     }
 
     try {
-      // 1. Validate Invite Code (unless initial admin setup)
-      if (!isAdminSetup) {
+      // 1. Validate Admin Setup or Invite Code
+      if (isAdminSetup) {
+        const { data: existingAdmin } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('is_admin', true)
+          .limit(1);
+
+        if (existingAdmin && existingAdmin.length > 0) {
+          return { user: null, error: 'A Founder Administrator account already exists. Please log in or register with an invite code.' };
+        }
+      } else {
         if (!inviteCode) {
-          return { user: CURRENT_USER, error: 'Registration is invite-only. Please provide an invite code.' };
+          return { user: null, error: 'Registration is invite-only. Please provide a valid invite code from your server admin.' };
         }
 
         const { data: invite, error: inviteErr } = await supabase
@@ -50,15 +76,15 @@ export const authService = {
           .single();
 
         if (inviteErr || !invite) {
-          return { user: CURRENT_USER, error: 'Invalid or expired invite code.' };
+          return { user: null, error: 'Invalid or expired invite code.' };
         }
 
         if (invite.max_uses && invite.uses >= invite.max_uses) {
-          return { user: CURRENT_USER, error: 'This invite code has reached its maximum uses.' };
+          return { user: null, error: 'This invite code has reached its maximum uses.' };
         }
 
         if (invite.expires_at && new Date(invite.expires_at) < new Date()) {
-          return { user: CURRENT_USER, error: 'This invite code has expired.' };
+          return { user: null, error: 'This invite code has expired.' };
         }
       }
 
@@ -70,12 +96,12 @@ export const authService = {
         .maybeSingle();
 
       if (existingUser) {
-        return { user: CURRENT_USER, error: 'Username is already taken. Please choose another.' };
+        return { user: null, error: 'Username is already taken. Please choose another.' };
       }
 
       // 3. Supabase Auth Sign Up
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
+        email: email.trim(),
         password,
         options: {
           data: {
@@ -86,30 +112,36 @@ export const authService = {
       });
 
       if (authError || !authData.user) {
-        return { user: CURRENT_USER, error: authError?.message || 'Failed to create account.' };
+        return { user: null, error: authError?.message || 'Failed to create account.' };
       }
 
       const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${username}`;
 
       // 4. Create Profile Record
-      const { data: profile, error: profileErr } = await supabase
+      const { error: profileErr } = await supabase
         .from('profiles')
-        .insert({
+        .upsert({
           id: authData.user.id,
           username: username.toLowerCase().trim(),
           display_name: displayName.trim() || username,
           avatar_url: avatarUrl,
           status: 'online',
           is_admin: Boolean(isAdminSetup),
-        })
-        .select()
-        .single();
+        });
 
       if (profileErr) {
         console.error('Profile creation error:', profileErr);
       }
 
-      // 5. Increment Invite Code Uses
+      // 5. If this is admin setup, create default server if not existing
+      if (isAdminSetup) {
+        await supabase.from('servers').upsert({
+          name: 'SquadSpace Hangout',
+          owner_id: authData.user.id,
+        });
+      }
+
+      // 6. Increment Invite Code Uses if applicable
       if (inviteCode && !isAdminSetup) {
         try {
           await supabase.rpc('increment_invite_uses', { p_code: inviteCode.trim() });
@@ -129,31 +161,39 @@ export const authService = {
 
       return { user: newUser };
     } catch (err: any) {
-      return { user: CURRENT_USER, error: err.message || 'An unexpected error occurred during registration.' };
+      return { user: null, error: err.message || 'An unexpected error occurred during registration.' };
     }
   },
 
   /**
    * Log in user with email & password
    */
-  async login(params: LoginParams): Promise<{ user: UserProfile; error?: string }> {
+  async login(params: LoginParams): Promise<{ user: UserProfile | null; error?: string }> {
     const { emailOrUsername, password } = params;
 
     if (!isSupabaseConfigured || !supabase) {
-      console.info('Supabase not configured in .env. Logging in as local session user.');
+      const saved = localStorage.getItem('squadspace_local_user');
+      if (saved) {
+        try {
+          return { user: JSON.parse(saved) };
+        } catch {}
+      }
       const localUser: UserProfile = {
-        ...CURRENT_USER,
+        id: `usr-${Date.now()}`,
         username: emailOrUsername.includes('@') ? emailOrUsername.split('@')[0] : emailOrUsername,
         displayName: emailOrUsername.includes('@') ? emailOrUsername.split('@')[0] : emailOrUsername,
+        avatarUrl: `https://api.dicebear.com/7.x/bottts/svg?seed=${emailOrUsername}`,
         status: 'online',
+        isAdmin: true,
       };
+      localStorage.setItem('squadspace_local_user', JSON.stringify(localUser));
       return { user: localUser };
     }
 
     try {
-      let email = emailOrUsername;
+      let email = emailOrUsername.trim();
 
-      // If user typed username instead of email, lookup email
+      // If user typed username instead of email, lookup email from profiles
       if (!emailOrUsername.includes('@')) {
         const { data: profile } = await supabase
           .from('profiles')
@@ -162,7 +202,7 @@ export const authService = {
           .maybeSingle();
 
         if (!profile) {
-          return { user: CURRENT_USER, error: 'User not found with this username.' };
+          return { user: null, error: 'User not found with this username.' };
         }
       }
 
@@ -172,7 +212,7 @@ export const authService = {
       });
 
       if (authError || !authData.user) {
-        return { user: CURRENT_USER, error: authError?.message || 'Invalid credentials.' };
+        return { user: null, error: authError?.message || 'Invalid email or password.' };
       }
 
       // Fetch Profile Details
@@ -187,11 +227,11 @@ export const authService = {
             id: profile.id,
             username: profile.username,
             displayName: profile.display_name,
-            avatarUrl: profile.avatar_url,
+            avatarUrl: profile.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${profile.username}`,
             status: 'online',
             customStatus: profile.custom_status,
             aboutMe: profile.about_me,
-            isAdmin: profile.is_admin,
+            isAdmin: Boolean(profile.is_admin),
           }
         : {
             id: authData.user.id,
@@ -206,18 +246,21 @@ export const authService = {
 
       return { user: userProfile };
     } catch (err: any) {
-      return { user: CURRENT_USER, error: err.message || 'Login failed.' };
+      return { user: null, error: err.message || 'Login failed.' };
     }
   },
 
   /**
    * Log out current user
    */
-  async logout(userId: string): Promise<void> {
+  async logout(userId?: string): Promise<void> {
     if (isSupabaseConfigured && supabase) {
-      await supabase.from('profiles').update({ status: 'offline' }).eq('id', userId);
+      if (userId) {
+        await supabase.from('profiles').update({ status: 'offline' }).eq('id', userId);
+      }
       await supabase.auth.signOut();
     }
+    localStorage.removeItem('squadspace_local_user');
   },
 
   /**
@@ -240,7 +283,6 @@ export const authService = {
    */
   async uploadAvatar(file: File, userId: string): Promise<{ url?: string; error?: string }> {
     if (!isSupabaseConfigured || !supabase) {
-      // Local preview URL
       const localUrl = URL.createObjectURL(file);
       return { url: localUrl };
     }
