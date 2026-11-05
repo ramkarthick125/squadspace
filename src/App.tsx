@@ -12,6 +12,7 @@ import { ChannelModal } from './components/modals/ChannelModal';
 import { ServerSettingsModal } from './components/modals/ServerSettingsModal';
 import { InviteModal } from './components/modals/InviteModal';
 import { JoinServerModal } from './components/modals/JoinServerModal';
+import { CreateServerModal } from './components/modals/CreateServerModal';
 import { GifPickerModal } from './components/modals/GifPickerModal';
 import { EmojiPickerModal } from './components/modals/EmojiPickerModal';
 import { AuthModal } from './components/auth/AuthModal';
@@ -39,6 +40,7 @@ export function App() {
   const [isServerSettingsOpen, setIsServerSettingsOpen] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isJoinServerOpen, setIsJoinServerOpen] = useState(false);
+  const [isCreateServerOpen, setIsCreateServerOpen] = useState(false);
   const [isGifPickerOpen, setIsGifPickerOpen] = useState(false);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const [targetMessageIdForEmoji, setTargetMessageIdForEmoji] = useState<string | null>(null);
@@ -180,6 +182,7 @@ export function App() {
         onOpenServerSettings={() => setIsServerSettingsOpen(true)}
         onOpenCreateChannel={() => handleOpenCreateChannel()}
         onOpenJoinServer={() => setIsJoinServerOpen(true)}
+        onOpenCreateServer={() => setIsCreateServerOpen(true)}
       />
 
       {/* 2. Direct Messages View or Server Workspace */}
@@ -306,6 +309,12 @@ export function App() {
         isOpen={isJoinServerOpen}
         onClose={() => setIsJoinServerOpen(false)}
         initialCode={urlInviteCode || undefined}
+      />
+
+      <CreateServerModal
+        isOpen={isCreateServerOpen}
+        onClose={() => setIsCreateServerOpen(false)}
+        onSwitchToJoin={() => setIsJoinServerOpen(true)}
       />
 
       <GifPickerModal

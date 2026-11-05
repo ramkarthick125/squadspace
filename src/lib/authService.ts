@@ -145,15 +145,15 @@ export const authService = {
       }
 
       // 6. Server Setup / Membership
-      const { data: existingServers } = await supabase.from('servers').select('id').limit(1);
-      let serverId = matchedServerId || existingServers?.[0]?.id;
+      let serverId = matchedServerId;
 
+      // If user did NOT join via invite code, create their own private server!
       if (!serverId) {
-        // Create initial default server if none exists yet
+        const personalServerName = `${displayName.trim() || username}'s Server`;
         const { data: newServer } = await supabase
           .from('servers')
           .insert({
-            name: 'SquadSpace Hangout',
+            name: personalServerName,
             owner_id: authData.user.id,
           })
           .select()
@@ -165,11 +165,16 @@ export const authService = {
         await supabase.from('server_members').upsert({
           server_id: serverId,
           user_id: authData.user.id,
-          role: isAdminSetup ? 'owner' : 'member',
+          role: matchedServerId ? 'member' : 'owner',
         });
 
-        // Ensure at least one invitation exists
-        const { data: existingInv } = await supabase.from('invitations').select('id').limit(1);
+        // Ensure at least one invitation exists for this server
+        const { data: existingInv } = await supabase
+          .from('invitations')
+          .select('id')
+          .eq('server_id', serverId)
+          .limit(1);
+
         if (!existingInv || existingInv.length === 0) {
           const initialCode = 'sqd-' + Math.random().toString(36).substring(2, 8);
           await supabase.from('invitations').insert({
@@ -320,22 +325,25 @@ export const authService = {
   /**
    * Join server with invite code for an existing user
    */
-  async joinServerWithCode(code: string, userId: string): Promise<{ success: boolean; error?: string }> {
+  async joinServerWithCode(code: string, userId: string): Promise<{ success: boolean; error?: string; serverId?: string }> {
     if (!isSupabaseConfigured || !supabase) return { success: false, error: 'Database not connected.' };
 
     try {
-      const { data: invite } = await supabase
+      const { data: invite, error: invErr } = await supabase
         .from('invitations')
         .select('*')
         .eq('code', code.trim())
         .maybeSingle();
 
-      const { data: servers } = await supabase.from('servers').select('id').limit(1);
-      const serverId = invite?.server_id || servers?.[0]?.id;
-
-      if (!serverId) {
-        return { success: false, error: 'No active server found to join.' };
+      if (invErr || !invite || !invite.server_id) {
+        return { success: false, error: 'Invalid or expired invite code.' };
       }
+
+      if (invite.max_uses && invite.uses >= invite.max_uses) {
+        return { success: false, error: 'This invite code has reached its maximum uses.' };
+      }
+
+      const serverId = invite.server_id;
 
       await supabase.from('server_members').upsert({
         server_id: serverId,
@@ -343,14 +351,30 @@ export const authService = {
         role: 'member',
       });
 
-      if (invite) {
-        await supabase
-          .from('invitations')
-          .update({ uses: (invite.uses || 0) + 1 })
-          .eq('code', code.trim());
-      }
+      await supabase
+        .from('invitations')
+        .update({ uses: (invite.uses || 0) + 1 })
+        .eq('code', code.trim());
 
-      return { success: true };
+      // Save to local user servers list
+      try {
+        const { data: server } = await supabase.from('servers').select('*').eq('id', serverId).maybeSingle();
+        if (server) {
+          const userServers = JSON.parse(localStorage.getItem(`squadspace_user_servers_${userId}`) || '[]');
+          if (!userServers.some((s: any) => s.id === server.id)) {
+            userServers.push({
+              id: server.id,
+              name: server.name,
+              icon: '🚀',
+              ownerId: server.owner_id,
+              createdAt: server.created_at,
+            });
+            localStorage.setItem(`squadspace_user_servers_${userId}`, JSON.stringify(userServers));
+          }
+        }
+      } catch {}
+
+      return { success: true, serverId };
     } catch (err: any) {
       return { success: false, error: err.message || 'Failed to join server.' };
     }

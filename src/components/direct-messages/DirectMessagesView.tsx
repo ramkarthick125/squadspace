@@ -301,7 +301,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
                                   if (!currentUser) return;
                                   const res = await authService.joinServerWithCode(att.url, currentUser.id);
                                   if (res.success) {
-                                    await fetchServerData();
+                                    await fetchServerData(res.serverId);
                                     setActiveView('server');
                                   } else {
                                     alert(res.error || 'Failed to join server');

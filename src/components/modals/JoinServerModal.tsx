@@ -12,7 +12,7 @@ interface JoinServerModalProps {
 
 export const JoinServerModal: React.FC<JoinServerModalProps> = ({ isOpen, onClose, initialCode }) => {
   const { currentUser } = useAuthStore();
-  const { fetchServerData } = useServerStore();
+  const { fetchServerData, setActiveView } = useServerStore();
   const [inviteCode, setInviteCode] = useState(initialCode || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +50,8 @@ export const JoinServerModal: React.FC<JoinServerModalProps> = ({ isOpen, onClos
 
     if (res.success) {
       setSuccess(true);
-      await fetchServerData();
+      await fetchServerData(res.serverId);
+      setActiveView('server');
       setTimeout(() => {
         setSuccess(false);
         setInviteCode('');

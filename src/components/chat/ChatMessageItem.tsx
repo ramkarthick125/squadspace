@@ -164,7 +164,7 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
                           if (!currentUser) return;
                           const res = await authService.joinServerWithCode(att.url, currentUser.id);
                           if (res.success) {
-                            await fetchServerData();
+                            await fetchServerData(res.serverId);
                             alert('Successfully joined the server!');
                           } else {
                             alert(res.error || 'Failed to join server');

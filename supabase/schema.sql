@@ -202,27 +202,28 @@ CREATE POLICY "Server members viewable by all" ON public.server_members FOR SELE
 CREATE POLICY "Users can join servers" ON public.server_members FOR ALL USING (true) WITH CHECK (true);
 
 -- 4. Channel Categories & Channels
+DROP POLICY IF EXISTS "Categories viewable by all" ON public.channel_categories;
 DROP POLICY IF EXISTS "Categories viewable by authenticated users" ON public.channel_categories;
 DROP POLICY IF EXISTS "Users can manage categories" ON public.channel_categories;
-CREATE POLICY "Categories viewable by authenticated users" ON public.channel_categories FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Users can manage categories" ON public.channel_categories FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Categories viewable by all" ON public.channel_categories FOR SELECT USING (true);
+CREATE POLICY "Users can manage categories" ON public.channel_categories FOR ALL USING (true) WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Channels viewable by all" ON public.channels;
 DROP POLICY IF EXISTS "Channels viewable by authenticated users" ON public.channels;
 DROP POLICY IF EXISTS "Users can manage channels" ON public.channels;
-CREATE POLICY "Channels viewable by authenticated users" ON public.channels FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Users can manage channels" ON public.channels FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "Channels viewable by all" ON public.channels FOR SELECT USING (true);
+CREATE POLICY "Users can manage channels" ON public.channels FOR ALL USING (true) WITH CHECK (true);
 
 -- 5. Messages
+DROP POLICY IF EXISTS "Messages viewable by all" ON public.messages;
 DROP POLICY IF EXISTS "Server members can read messages" ON public.messages;
 DROP POLICY IF EXISTS "Users can insert messages" ON public.messages;
 DROP POLICY IF EXISTS "Users can edit own messages" ON public.messages;
 DROP POLICY IF EXISTS "Users and admins can delete messages" ON public.messages;
-CREATE POLICY "Server members can read messages" ON public.messages FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Users can insert messages" ON public.messages FOR INSERT TO authenticated WITH CHECK ((SELECT auth.uid()) = sender_id);
-CREATE POLICY "Users can edit own messages" ON public.messages FOR UPDATE TO authenticated USING ((SELECT auth.uid()) = sender_id);
-CREATE POLICY "Users and admins can delete messages" ON public.messages FOR DELETE TO authenticated USING (
-  (SELECT auth.uid()) = sender_id OR EXISTS (SELECT 1 FROM public.profiles WHERE id = (SELECT auth.uid()) AND is_admin = true)
-);
+CREATE POLICY "Messages viewable by all" ON public.messages FOR SELECT USING (true);
+CREATE POLICY "Users can insert messages" ON public.messages FOR INSERT WITH CHECK (true);
+CREATE POLICY "Users can edit own messages" ON public.messages FOR UPDATE USING (true) WITH CHECK (true);
+CREATE POLICY "Users and admins can delete messages" ON public.messages FOR DELETE USING (true);
 
 -- 6. Message Reactions
 DROP POLICY IF EXISTS "Reactions viewable by authenticated users" ON public.message_reactions;

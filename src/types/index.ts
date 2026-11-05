@@ -19,6 +19,15 @@ export interface UserProfile {
   createdAt?: string;
 }
 
+export interface Server {
+  id: string;
+  name: string;
+  icon?: string;
+  iconUrl?: string;
+  ownerId: string;
+  createdAt?: string;
+}
+
 export type ChannelType = 'text' | 'voice';
 
 export interface ChannelCategory {
