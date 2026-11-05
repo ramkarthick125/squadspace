@@ -22,6 +22,7 @@ import { authService } from './lib/authService';
 import { useServerStore } from './store/useServerStore';
 import { useChatStore } from './store/useChatStore';
 import { useAuthStore } from './store/useAuthStore';
+import { useDMStore } from './store/useDMStore';
 import { ChannelType } from './types';
 
 export function App() {
@@ -84,6 +85,7 @@ export function App() {
   useEffect(() => {
     if (isAuthenticated && currentUser) {
       fetchServerData();
+      useDMStore.getState().initDMStore(currentUser);
     }
   }, [isAuthenticated, currentUser?.id, fetchServerData]);
 

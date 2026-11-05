@@ -6,8 +6,10 @@ import { useServerStore } from '../store/useServerStore';
 import { useVoiceStore } from '../store/useVoiceStore';
 import { useDMStore } from '../store/useDMStore';
 import { notificationService } from './notificationService';
+import { sounds } from './soundEffects';
 
 let broadcastChannel: RealtimeChannel | null = null;
+let inboxChannel: RealtimeChannel | null = null;
 let localBroadcast: BroadcastChannel | null = null;
 
 export const realtimeService = {
@@ -31,7 +33,7 @@ export const realtimeService = {
       };
     }
 
-    // 2. Supabase Realtime Broadcast & Presence (Sub-50ms latency across the internet)
+    // 2. Global Supabase Realtime Broadcast Mesh
     try {
       broadcastChannel = supabase.channel('squadspace_global_mesh', {
         config: {
@@ -73,12 +75,28 @@ export const realtimeService = {
           }
         });
     } catch (err) {
-      console.warn('Realtime sync setup note:', err);
+      console.warn('Global mesh setup note:', err);
+    }
+
+    // 3. Dedicated Personal User Inbox Channel (Direct peer-to-peer delivery for DMs & Friend requests)
+    try {
+      inboxChannel = supabase.channel(`user_inbox_${currentUser.id}`, {
+        config: { broadcast: { self: false } },
+      });
+
+      inboxChannel
+        .on('broadcast', { event: 'sync_event' }, (event) => {
+          this.handleIncomingPayload(event.payload, currentUser);
+        })
+        .subscribe();
+    } catch (err) {
+      console.warn('Personal inbox setup note:', err);
     }
 
     return () => {
       if (localBroadcast) localBroadcast.close();
       if (broadcastChannel && supabase) supabase.removeChannel(broadcastChannel);
+      if (inboxChannel && supabase) supabase.removeChannel(inboxChannel);
     };
   },
 
@@ -87,6 +105,11 @@ export const realtimeService = {
    */
   handleIncomingPayload(payload: any, currentUser: UserProfile) {
     if (!payload || payload.senderId === currentUser.id) return;
+
+    // Filter directed messages not intended for this user
+    if (payload.recipientId && payload.recipientId !== currentUser.id) {
+      return;
+    }
 
     switch (payload.type) {
       // 1. Live Chat Message received
@@ -102,6 +125,9 @@ export const realtimeService = {
               [channelId]: [...existing, message],
             },
           });
+
+          // Play notification chime
+          sounds.playNotificationChime();
 
           // Show desktop notification
           const channels = useServerStore.getState().channels;
@@ -224,22 +250,26 @@ export const realtimeService = {
 
       // 7. Direct Message (DM)
       case 'new_dm': {
-        const { message, conversationId } = payload;
-        const dmStore = useDMStore.getState();
-        const existing = dmStore.dmMessages[conversationId] || [];
+        const { message, conversationId, senderProfile } = payload;
+        const profile = senderProfile || message.sender;
+        useDMStore.getState().receiveIncomingDM(message, conversationId, profile);
+        break;
+      }
 
-        if (!existing.some((m) => m.id === message.id)) {
-          useDMStore.setState({
-            dmMessages: {
-              ...dmStore.dmMessages,
-              [conversationId]: [...existing, message],
-            },
-          });
+      // 8. Friend Request
+      case 'friend_request': {
+        const { senderProfile } = payload;
+        if (senderProfile) {
+          useDMStore.getState().receiveFriendRequest(senderProfile);
+        }
+        break;
+      }
 
-          notificationService.notify({
-            title: `@${message.sender?.displayName || 'Direct Message'}`,
-            body: message.content || 'Sent an invite card',
-          });
+      // 9. Server Member Joined
+      case 'server_member_joined': {
+        const { serverId, user } = payload;
+        if (serverId && user) {
+          useServerStore.getState().handleMemberJoined(serverId, user);
         }
         break;
       }
@@ -309,12 +339,38 @@ export const realtimeService = {
     });
   },
 
-  broadcastDM(message: Message, conversationId: string) {
+  broadcastDM(message: Message, conversationId: string, recipientId: string, senderProfile: UserProfile) {
+    this.sendUniversalPayload(
+      {
+        type: 'new_dm',
+        senderId: message.senderId,
+        recipientId,
+        conversationId,
+        message,
+        senderProfile,
+      },
+      recipientId
+    );
+  },
+
+  broadcastFriendRequest(senderProfile: UserProfile, recipientId: string) {
+    this.sendUniversalPayload(
+      {
+        type: 'friend_request',
+        senderId: senderProfile.id,
+        recipientId,
+        senderProfile,
+      },
+      recipientId
+    );
+  },
+
+  broadcastMemberJoined(serverId: string, user: UserProfile) {
     this.sendUniversalPayload({
-      type: 'new_dm',
-      senderId: message.senderId,
-      conversationId,
-      message,
+      type: 'server_member_joined',
+      serverId,
+      user,
+      senderId: user.id,
     });
   },
 
@@ -328,20 +384,37 @@ export const realtimeService = {
     }
   },
 
-  sendUniversalPayload(payload: any) {
+  sendUniversalPayload(payload: any, targetUserId?: string) {
     // 1. Local cross-tab
     if (localBroadcast) {
       try {
         localBroadcast.postMessage(payload);
       } catch {}
     }
-    // 2. Supabase internet broadcast
+
+    // 2. Global Supabase broadcast
     if (broadcastChannel) {
       try {
         broadcastChannel.send({
           type: 'broadcast',
           event: 'sync_event',
           payload,
+        });
+      } catch {}
+    }
+
+    // 3. Targeted user inbox broadcast (direct deliverability)
+    if (targetUserId && supabase) {
+      try {
+        const directInbox = supabase.channel(`user_inbox_${targetUserId}`);
+        directInbox.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            directInbox.send({
+              type: 'broadcast',
+              event: 'sync_event',
+              payload,
+            });
+          }
         });
       } catch {}
     }

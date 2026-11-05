@@ -32,6 +32,7 @@ interface ServerState {
   deleteCustomEmoji: (id: string) => Promise<void>;
   createInvite: (creatorId: string) => Promise<ServerInvite>;
   updateMember: (memberId: string, updates: Partial<UserProfile>) => void;
+  handleMemberJoined: (serverId: string, user: UserProfile) => void;
 }
 
 function generateUUID(): string {
@@ -745,5 +746,12 @@ export const useServerStore = create<ServerState>((set, get) => ({
     set((state) => ({
       members: state.members.map((m) => (m.id === memberId ? { ...m, ...updates } : m)),
     }));
+  },
+
+  handleMemberJoined: (serverId, user) => {
+    const { activeServerId, members } = get();
+    if (activeServerId === serverId && !members.some((m) => m.id === user.id)) {
+      set({ members: [...members, user] });
+    }
   },
 }));

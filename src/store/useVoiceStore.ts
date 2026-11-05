@@ -3,6 +3,8 @@ import { UserProfile, VoiceParticipant } from '../types';
 import { webrtcManager } from '../lib/webrtcManager';
 import { ScreenSharePreset, VoiceEngineMode } from '../lib/livekit';
 import { sounds } from '../lib/soundEffects';
+import { realtimeService } from '../lib/realtimeService';
+import { useAuthStore } from './useAuthStore';
 
 interface VoiceState {
   activeVoiceChannelId: string | null;
@@ -176,6 +178,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     });
 
     sounds.playJoinVoice();
+    realtimeService.broadcastVoiceState(channelId, currentUser, 'joined', isMuted);
     return true;
   },
 
@@ -183,6 +186,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     const { activeVoiceChannelId, participantsByChannel } = get();
     if (!activeVoiceChannelId) return;
 
+    realtimeService.broadcastVoiceState(activeVoiceChannelId, currentUser, 'left');
     webrtcManager.leaveVoiceChannel();
     if (audioLevelUnsub) {
       audioLevelUnsub();
@@ -242,9 +246,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     }
 
     if (activeVoiceChannelId) {
+      const currentUser = useAuthStore.getState().currentUser;
+      if (currentUser) {
+        realtimeService.broadcastVoiceState(activeVoiceChannelId, currentUser, 'muted', newMuted);
+      }
+
       const channelParticipants = participantsByChannel[activeVoiceChannelId] || [];
       const updatedParticipants = channelParticipants.map((p) =>
-        p.user.isAdmin ? { ...p, isMuted: newMuted } : p
+        p.userId === currentUser?.id ? { ...p, isMuted: newMuted } : p
       );
 
       set({

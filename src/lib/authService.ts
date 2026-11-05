@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import { UserProfile } from '../types';
+import { realtimeService } from './realtimeService';
 
 export interface RegisterParams {
   email: string;
@@ -371,6 +372,21 @@ export const authService = {
             });
             localStorage.setItem(`squadspace_user_servers_${userId}`, JSON.stringify(userServers));
           }
+        }
+
+        // Fetch user profile and broadcast live member joined
+        const { data: userProfile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+        if (userProfile) {
+          realtimeService.broadcastMemberJoined(serverId, {
+            id: userProfile.id,
+            username: userProfile.username,
+            displayName: userProfile.display_name,
+            avatarUrl: userProfile.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${userProfile.username}`,
+            status: userProfile.status || 'online',
+            customStatus: userProfile.custom_status,
+            aboutMe: userProfile.about_me,
+            isAdmin: Boolean(userProfile.is_admin),
+          });
         }
       } catch {}
 

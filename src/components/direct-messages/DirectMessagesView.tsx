@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Users,
   MessageSquare,
@@ -41,7 +41,14 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     friends,
     startOrOpenDM,
     addFriendByUsername,
+    initDMStore,
   } = useDMStore();
+
+  useEffect(() => {
+    if (currentUser) {
+      initDMStore(currentUser);
+    }
+  }, [currentUser, initDMStore]);
 
   const [activeTab, setActiveTab] = useState<'friends' | 'chat'>('friends');
   const [friendFilter, setFriendFilter] = useState<'online' | 'all' | 'add'>('online');
@@ -71,7 +78,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
   const handleSendDM = () => {
     if (!inputText.trim() || !activeConversationId || !currentUser) return;
-    sendDM(activeConversationId, inputText.trim(), currentUser);
+    sendDM(activeConversationId, inputText.trim(), currentUser, undefined, activeRecipient?.id);
     setInputText('');
   };
 
@@ -93,11 +100,18 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     }
   };
 
+  const isRealUser = (u: any) =>
+    u &&
+    u.username &&
+    !u.username.startsWith('uuid_test_') &&
+    !u.username.startsWith('test_') &&
+    !u.username.includes('probe');
+
   // Combine custom friends with server squad members
   const squadFriendsList = [
     ...friends,
     ...members.filter((m) => m.id !== currentUser?.id && !friends.some((f) => f.id === m.id)),
-  ];
+  ].filter(isRealUser);
 
   const filteredFriends = squadFriendsList.filter((f) => {
     if (friendFilter === 'online') return f.status !== 'offline';
@@ -151,7 +165,7 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
             <div className="space-y-0.5">
               {conversations.map((conv) => {
-                const partner = conv.members[0];
+                const partner = conv.members.find((m) => m.id !== currentUser?.id) || conv.members[0];
                 if (!partner) return null;
                 const isActive = activeConversationId === conv.id;
 
