@@ -66,6 +66,14 @@ function createMainWindow() {
     mainWindow.webContents.send('window:maximized-change', false);
   });
 
+  // Allow F12 or Ctrl+Shift+I to toggle DevTools
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+  });
+
   // Minimize to tray on close unless quitting
   mainWindow.on('close', (event) => {
     if (!isQuitting) {
