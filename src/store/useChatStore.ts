@@ -340,6 +340,9 @@ export const useChatStore = create<ChatState>((set, get) => {
       set({ messagesByChannel: updated });
       persistMessages(updated);
 
+      // Broadcast reaction to other peers in real-time
+      realtimeService.broadcastReaction(channelId, messageId, emoji, userId);
+
       if (isSupabaseConfigured && supabase) {
         try {
           if (hasReacted) {

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Mic, MicOff, Headphones, Settings, Circle } from 'lucide-react';
+import { Mic, MicOff, Headphones, Settings, Circle, Radio } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useVoiceStore } from '../../store/useVoiceStore';
+import { useSettingsStore, formatKeyDisplay } from '../../store/useSettingsStore';
 import { UserStatus } from '../../types';
 
 interface UserBottomBarProps {
@@ -11,6 +12,7 @@ interface UserBottomBarProps {
 export const UserBottomBar: React.FC<UserBottomBarProps> = ({ onOpenSettings }) => {
   const { currentUser, updateStatus } = useAuthStore();
   const { isMuted, isDeafened, toggleMute, toggleDeafen, activeVoiceChannelId } = useVoiceStore();
+  const { inputMode, keybinds, isPttPressed } = useSettingsStore();
   const [showStatusMenu, setShowStatusMenu] = useState(false);
 
   if (!currentUser) return null;
@@ -73,12 +75,27 @@ export const UserBottomBar: React.FC<UserBottomBarProps> = ({ onOpenSettings }) 
       <div className="flex items-center text-discord-gray-300">
         <button
           onClick={toggleMute}
-          title={isMuted ? 'Unmute' : 'Mute'}
-          className={`p-1.5 rounded hover:bg-discord-hover transition-colors ${
-            isMuted ? 'text-discord-red hover:text-discord-red' : 'hover:text-discord-gray-100'
+          title={
+            isMuted
+              ? 'Unmute'
+              : inputMode === 'push_to_talk'
+              ? `Push-to-Talk (${formatKeyDisplay(keybinds.pushToTalk)})`
+              : 'Mute'
+          }
+          className={`relative p-1.5 rounded hover:bg-discord-hover transition-colors ${
+            isMuted
+              ? 'text-discord-red hover:text-discord-red'
+              : inputMode === 'push_to_talk' && isPttPressed
+              ? 'text-discord-green bg-discord-green/20 font-bold'
+              : 'hover:text-discord-gray-100'
           }`}
         >
           {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+          {inputMode === 'push_to_talk' && !isMuted && (
+            <span className="absolute -bottom-1 -right-0.5 text-[8px] font-bold px-1 rounded bg-black/80 text-discord-blurple-light scale-90 border border-white/10">
+              PTT
+            </span>
+          )}
         </button>
 
         <button

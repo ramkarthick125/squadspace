@@ -256,6 +256,27 @@ export const realtimeService = {
         break;
       }
 
+      // 7b. DM Edit
+      case 'dm_edit': {
+        const { conversationId, messageId, content } = payload;
+        useDMStore.getState().receiveDMEdit(conversationId, messageId, content);
+        break;
+      }
+
+      // 7c. DM Delete
+      case 'dm_delete': {
+        const { conversationId, messageId } = payload;
+        useDMStore.getState().receiveDMDelete(conversationId, messageId);
+        break;
+      }
+
+      // 7d. DM Reaction
+      case 'dm_reaction': {
+        const { conversationId, messageId, emoji, userId } = payload;
+        useDMStore.getState().receiveDMReaction(conversationId, messageId, emoji, userId);
+        break;
+      }
+
       // 8. Friend Request
       case 'friend_request': {
         const { senderProfile } = payload;
@@ -348,6 +369,45 @@ export const realtimeService = {
         conversationId,
         message,
         senderProfile,
+      },
+      recipientId
+    );
+  },
+
+  broadcastDMEdit(conversationId: string, messageId: string, content: string, senderId: string, recipientId?: string) {
+    this.sendUniversalPayload(
+      {
+        type: 'dm_edit',
+        senderId,
+        conversationId,
+        messageId,
+        content,
+      },
+      recipientId
+    );
+  },
+
+  broadcastDMDelete(conversationId: string, messageId: string, senderId: string, recipientId?: string) {
+    this.sendUniversalPayload(
+      {
+        type: 'dm_delete',
+        senderId,
+        conversationId,
+        messageId,
+      },
+      recipientId
+    );
+  },
+
+  broadcastDMReaction(conversationId: string, messageId: string, emoji: string, userId: string, recipientId?: string) {
+    this.sendUniversalPayload(
+      {
+        type: 'dm_reaction',
+        senderId: userId,
+        conversationId,
+        messageId,
+        emoji,
+        userId,
       },
       recipientId
     );

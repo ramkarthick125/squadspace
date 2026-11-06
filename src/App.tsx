@@ -24,9 +24,12 @@ import { useServerStore } from './store/useServerStore';
 import { useChatStore } from './store/useChatStore';
 import { useAuthStore } from './store/useAuthStore';
 import { useDMStore } from './store/useDMStore';
+import { useGlobalKeybinds } from './hooks/useGlobalKeybinds';
 import { ChannelType } from './types';
 
 export function App() {
+  useGlobalKeybinds();
+
   const { channels, activeChannelId, activeView, fetchServerData } = useServerStore();
   const { sendMessage, toggleReaction, fetchChannelMessages } = useChatStore();
   const { currentUser, isAuthenticated, isLoadingAuth, checkSession } = useAuthStore();

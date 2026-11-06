@@ -3,16 +3,20 @@
  * 
  * Provides:
  * 1. 100% Direct P2P WebRTC audio & screen streaming (0 server bandwidth, unlimited minutes)
- * 2. 2K (1440p) @ 30fps and 60fps screen sharing via hardware GPU acceleration
- * 3. Dual Signaling: Local BroadcastChannel (inter-tab) + Supabase Realtime Broadcast (inter-device/internet)
- * 4. Real hardware microphone capture with Web Audio API Voice Activity Detection (VAD)
- * 5. Free global Google STUN servers (stun.l.google.com:19302)
+ * 2. Ultra-Low Latency 60 FPS screen sharing via hardware GPU acceleration & SDP playout delay 0
+ * 3. Perfect Negotiation (W3C standard polite/impolite glare handling)
+ * 4. ICE candidate queuing (eliminating dropped candidate race conditions)
+ * 5. Clean track teardown on screen share stop (eliminating frozen frames)
+ * 6. Dual Signaling: Local BroadcastChannel (inter-tab) + Supabase Realtime Broadcast (inter-device/internet)
+ * 7. Real hardware microphone capture with Web Audio API Voice Activity Detection (VAD) & Push-to-Talk (PTT)
+ * 8. Free global Google STUN servers (stun.l.google.com:19302)
  */
 
 import { supabase, isSupabaseConfigured } from './supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
 import { SCREEN_SHARE_PRESETS, ScreenSharePreset } from './livekit';
 import { UserProfile, VoiceParticipant } from '../types';
+import { useSettingsStore } from '../store/useSettingsStore';
 
 export interface PeerConnectionInfo {
   peerId: string;
@@ -26,6 +30,47 @@ type ParticipantJoinedCallback = (user: UserProfile, isMuted?: boolean, isScreen
 type ParticipantLeftCallback = (userId: string) => void;
 type ParticipantUpdateCallback = (userId: string, updates: Partial<VoiceParticipant>) => void;
 
+/**
+ * Injects WebRTC SDP low-latency attributes:
+ * 1. a=playout-delay:0 0 (Chromium low-latency playout extension, eliminates receiver jitter delay)
+ * 2. Optimized fmtp bitrate bounds (x-google-min-bitrate & x-google-max-bitrate)
+ */
+function injectLowLatencySdp(sdp: string, maxBitrateBps: number = 5_500_000): string {
+  if (!sdp) return sdp;
+  const lines = sdp.split('\r\n');
+  const result: string[] = [];
+  let inVideo = false;
+  const maxBitrateKbps = Math.round(maxBitrateBps / 1000);
+  const minBitrateKbps = Math.min(2500, Math.round(maxBitrateKbps / 2));
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith('m=video')) {
+      inVideo = true;
+    } else if (line.startsWith('m=audio') || line.startsWith('m=application')) {
+      inVideo = false;
+    }
+
+    result.push(line);
+
+    // Inject playout-delay right after rtcp-mux or c=IN in video section
+    if (inVideo && (line.startsWith('a=rtcp-mux') || line.startsWith('c=IN'))) {
+      if (!lines.some((l) => l.includes('a=playout-delay:0 0'))) {
+        result.push('a=playout-delay:0 0');
+      }
+    }
+
+    // Enhance fmtp lines with google bitrate constraints
+    if (inVideo && line.startsWith('a=fmtp:')) {
+      if (!line.includes('x-google-max-bitrate')) {
+        result[result.length - 1] = `${line};x-google-min-bitrate=${minBitrateKbps};x-google-max-bitrate=${maxBitrateKbps};x-google-start-bitrate=${minBitrateKbps}`;
+      }
+    }
+  }
+
+  return result.join('\r\n');
+}
+
 class WebRTCManager {
   private localAudioStream: MediaStream | null = null;
   private localScreenStream: MediaStream | null = null;
@@ -38,6 +83,14 @@ class WebRTCManager {
   private supabaseSignalingChannel: RealtimeChannel | null = null;
   private peers: Map<string, RTCPeerConnection> = new Map();
   private remoteAudioElements: Map<string, HTMLAudioElement> = new Map();
+
+  // Low latency & Perfect negotiation state
+  private pendingCandidates: Map<string, RTCIceCandidateInit[]> = new Map();
+  private makingOffer: Map<string, boolean> = new Map();
+  private ignoreOffer: Map<string, boolean> = new Map();
+  private screenSenders: Map<string, RTCRtpSender[]> = new Map();
+  private presenceHeartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private isPttActive: boolean = false;
 
   private currentUser: UserProfile | null = null;
   private myUserId: string = '';
@@ -80,6 +133,9 @@ class WebRTCManager {
         video: false,
       });
 
+      // Initialize audio track state (PTT vs Open Mic)
+      this.updateAudioTrackState();
+
       // 2. Set up Web Audio API volume analysis & speaking detection
       this.initAudioAnalysis();
     } catch (err) {
@@ -112,12 +168,18 @@ class WebRTCManager {
       }
     }
 
-    // 4. Send join signal immediately on local broadcast channel (for multi-tab testing)
+    // 4. Send join signal immediately on local broadcast channel
     this.broadcastJoin();
+    setTimeout(() => this.broadcastJoin(), 600);
+    setTimeout(() => this.broadcastJoin(), 1500);
 
-    // Repeat join burst after 800ms and 1800ms to guarantee handshakes
-    setTimeout(() => this.broadcastJoin(), 800);
-    setTimeout(() => this.broadcastJoin(), 1800);
+    // 5. Periodic presence heartbeat (every 4 seconds) to guarantee sync across users
+    if (this.presenceHeartbeatInterval) {
+      clearInterval(this.presenceHeartbeatInterval);
+    }
+    this.presenceHeartbeatInterval = setInterval(() => {
+      this.broadcastPresence();
+    }, 4000);
 
     return true;
   }
@@ -134,10 +196,27 @@ class WebRTCManager {
     });
   }
 
+  private broadcastPresence() {
+    if (!this.currentChannelId || !this.currentUser) return;
+    this.sendSignal({
+      type: 'presence',
+      senderId: this.myUserId,
+      channelId: this.currentChannelId,
+      user: this.currentUser,
+      isMuted: this.isMuted,
+      isScreenSharing: Boolean(this.localScreenStream),
+    });
+  }
+
   /**
    * Leave voice channel and clean up all media hardware tracks
    */
   leaveVoiceChannel() {
+    if (this.presenceHeartbeatInterval) {
+      clearInterval(this.presenceHeartbeatInterval);
+      this.presenceHeartbeatInterval = null;
+    }
+
     if (this.currentChannelId) {
       this.sendSignal({
         type: 'leave',
@@ -174,6 +253,10 @@ class WebRTCManager {
     // Close all peer connections
     this.peers.forEach((pc) => pc.close());
     this.peers.clear();
+    this.pendingCandidates.clear();
+    this.makingOffer.clear();
+    this.ignoreOffer.clear();
+    this.screenSenders.clear();
 
     // Remove remote audio elements
     this.remoteAudioElements.forEach((el) => {
@@ -247,39 +330,41 @@ class WebRTCManager {
 
       const videoTrack = this.localScreenStream.getVideoTracks()[0];
       if (videoTrack) {
-        // Enforce content hint so browser encoder prioritizes crisp detail or high motion
+        // Enforce content hint so browser encoder prioritizes motion for 60fps
         if ('contentHint' in videoTrack) {
           (videoTrack as any).contentHint =
             preset.contentHint || (preset.frameRate >= 60 ? 'motion' : 'detail');
         }
 
-        this.peers.forEach((pc) => {
-          const sender = pc.addTrack(videoTrack, this.localScreenStream!);
-          if (sender && sender.getParameters) {
+        const audioTracks = this.localScreenStream.getAudioTracks();
+
+        // Add tracks to each peer and record senders for clean teardown
+        this.peers.forEach((pc, peerId) => {
+          const addedSenders: RTCRtpSender[] = [];
+
+          const vSender = pc.addTrack(videoTrack, this.localScreenStream!);
+          addedSenders.push(vSender);
+
+          if (vSender && vSender.getParameters) {
             try {
-              const params = sender.getParameters();
+              const params = vSender.getParameters();
               if (!params.encodings || params.encodings.length === 0) {
                 params.encodings = [{}];
               }
               params.encodings[0].maxBitrate = preset.maxBitrate;
               params.encodings[0].maxFramerate = preset.frameRate;
-              (params as any).degradationPreference =
-                preset.frameRate >= 60 ? 'maintain-framerate' : 'maintain-resolution';
-              sender.setParameters(params).catch(() => {});
+              (params as any).degradationPreference = 'maintain-framerate';
+              vSender.setParameters(params).catch(() => {});
             } catch {}
           }
-        });
 
-        // Add audio track to peer connection if system/tab audio was shared
-        const audioTracks = this.localScreenStream.getAudioTracks();
-        if (audioTracks.length > 0) {
-          this.peers.forEach((pc) => {
-            pc.addTrack(audioTracks[0], this.localScreenStream!);
-          });
-        }
+          if (audioTracks.length > 0) {
+            const aSender = pc.addTrack(audioTracks[0], this.localScreenStream!);
+            addedSenders.push(aSender);
+          }
 
-        this.peers.forEach((_, peerId) => {
-          this.createAndSendOffer(peerId);
+          this.screenSenders.set(peerId, addedSenders);
+          this.createAndSendOffer(peerId, preset.maxBitrate);
         });
 
         this.sendSignal({
@@ -298,12 +383,27 @@ class WebRTCManager {
   }
 
   /**
-   * Stop real screen sharing
+   * Stop real screen sharing and cleanly remove tracks from all peer connections
    */
   stopScreenShare() {
     if (this.localScreenStream) {
       this.localScreenStream.getTracks().forEach((track) => track.stop());
       this.localScreenStream = null;
+
+      // Cleanly remove screen senders from peer connections to avoid frozen last frames
+      this.peers.forEach((pc, peerId) => {
+        const senders = this.screenSenders.get(peerId);
+        if (senders) {
+          senders.forEach((s) => {
+            try {
+              pc.removeTrack(s);
+            } catch {}
+          });
+          this.screenSenders.delete(peerId);
+        }
+        // Renegotiate clean state
+        this.createAndSendOffer(peerId);
+      });
 
       this.sendSignal({
         type: 'screen-stop',
@@ -317,13 +417,33 @@ class WebRTCManager {
     return this.localScreenStream;
   }
 
+  /**
+   * Push-to-Talk state change
+   */
+  setPttActive(active: boolean) {
+    this.isPttActive = active;
+    this.updateAudioTrackState();
+  }
+
+  private updateAudioTrackState() {
+    if (!this.localAudioStream) return;
+    const settings = useSettingsStore.getState();
+    let enabled = true;
+
+    if (this.isMuted) {
+      enabled = false;
+    } else if (settings.inputMode === 'push_to_talk') {
+      enabled = this.isPttActive;
+    }
+
+    this.localAudioStream.getAudioTracks().forEach((t) => {
+      t.enabled = enabled;
+    });
+  }
+
   setMuted(muted: boolean) {
     this.isMuted = muted;
-    if (this.localAudioStream) {
-      this.localAudioStream.getAudioTracks().forEach((t) => {
-        t.enabled = !muted;
-      });
-    }
+    this.updateAudioTrackState();
     this.sendSignal({
       type: 'mute-change',
       senderId: this.myUserId,
@@ -395,7 +515,11 @@ class WebRTCManager {
       const checkAudioLevel = () => {
         if (!this.analyser) return;
 
-        if (this.isMuted) {
+        const settings = useSettingsStore.getState();
+        const effectiveMuted =
+          this.isMuted || (settings.inputMode === 'push_to_talk' && !this.isPttActive);
+
+        if (effectiveMuted) {
           this.onAudioLevelCallbacks.forEach((cb) => cb(0, false));
           if (wasSpeaking) {
             wasSpeaking = false;
@@ -432,7 +556,7 @@ class WebRTCManager {
   }
 
   // --------------------------------------------------------------------------
-  // PeerConnection & Signaling
+  // PeerConnection & Perfect Negotiation Signaling
   // --------------------------------------------------------------------------
 
   private createPeerConnection(peerId: string): RTCPeerConnection {
@@ -446,16 +570,20 @@ class WebRTCManager {
       iceCandidatePoolSize: 10,
     });
 
+    // Add microphone audio track
     if (this.localAudioStream) {
       this.localAudioStream.getAudioTracks().forEach((track) => {
         pc.addTrack(track, this.localAudioStream!);
       });
     }
 
+    // Add local screen share tracks if already active
     if (this.localScreenStream) {
+      const senders: RTCRtpSender[] = [];
       this.localScreenStream.getTracks().forEach((track) => {
-        pc.addTrack(track, this.localScreenStream!);
+        senders.push(pc.addTrack(track, this.localScreenStream!));
       });
+      this.screenSenders.set(peerId, senders);
     }
 
     pc.onicecandidate = (event) => {
@@ -471,6 +599,13 @@ class WebRTCManager {
     };
 
     pc.ontrack = (event) => {
+      // Eliminate receiver jitter buffer delay for ultra-low latency streaming
+      if (event.receiver && 'jitterBufferTarget' in event.receiver) {
+        try {
+          (event.receiver as any).jitterBufferTarget = 0;
+        } catch {}
+      }
+
       const stream = event.streams[0] || new MediaStream([event.track]);
 
       if (event.track.kind === 'audio') {
@@ -488,24 +623,54 @@ class WebRTCManager {
       this.onRemoteTrackCallbacks.forEach((cb) => cb(peerId, event.track, stream));
     };
 
+    // Prioritize hardware H264 / VP9 video codecs for hardware GPU decoding
+    try {
+      if ('getCapabilities' in RTCRtpSender) {
+        const capabilities = RTCRtpSender.getCapabilities('video');
+        if (capabilities && capabilities.codecs) {
+          const h264Codecs = capabilities.codecs.filter((c) =>
+            c.mimeType.toLowerCase().includes('h264')
+          );
+          const otherCodecs = capabilities.codecs.filter(
+            (c) => !c.mimeType.toLowerCase().includes('h264')
+          );
+          const transceivers = pc.getTransceivers();
+          transceivers.forEach((t) => {
+            if (t.sender.track?.kind === 'video' && 'setCodecPreferences' in t) {
+              try {
+                (t as any).setCodecPreferences([...h264Codecs, ...otherCodecs]);
+              } catch {}
+            }
+          });
+        }
+      }
+    } catch {}
+
     this.peers.set(peerId, pc);
     return pc;
   }
 
-  private async createAndSendOffer(peerId: string) {
+  private async createAndSendOffer(peerId: string, maxBitrate?: number) {
     const pc = this.peers.get(peerId) || this.createPeerConnection(peerId);
     try {
+      this.makingOffer.set(peerId, true);
       const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      if (pc.signalingState !== 'stable') return;
+
+      const optimizedSdp = injectLowLatencySdp(offer.sdp || '', maxBitrate);
+      await pc.setLocalDescription({ type: offer.type, sdp: optimizedSdp });
+
       this.sendSignal({
         type: 'offer',
-        sdp: offer,
+        sdp: { type: offer.type, sdp: optimizedSdp },
         targetId: peerId,
         senderId: this.myUserId,
         channelId: this.currentChannelId || '',
       });
     } catch (err) {
-      console.error('Error creating offer:', err);
+      console.warn('Error creating offer:', err);
+    } finally {
+      this.makingOffer.set(peerId, false);
     }
   }
 
@@ -518,16 +683,17 @@ class WebRTCManager {
     if (data.channelId !== this.currentChannelId) return;
 
     switch (data.type) {
-      case 'join': {
-        // A new peer joined the voice channel!
+      case 'join':
+      case 'presence': {
+        // A peer joined or is present in our voice channel
         if (data.user) {
           this.onParticipantJoinedCallbacks.forEach((cb) =>
             cb(data.user, data.isMuted, data.isScreenSharing)
           );
         }
 
-        // Announce ourselves back so the joining user knows we are here
-        if (this.currentUser) {
+        // Announce ourselves back if joining
+        if (data.type === 'join' && this.currentUser) {
           this.sendSignal({
             type: 'announce',
             targetId: data.senderId,
@@ -539,17 +705,21 @@ class WebRTCManager {
           });
         }
 
-        // Send WebRTC offer
-        await this.createAndSendOffer(data.senderId);
+        // Perfect negotiation rule: peer with smaller id creates the offer
+        if (!this.peers.has(data.senderId) && this.myUserId < data.senderId) {
+          await this.createAndSendOffer(data.senderId);
+        }
         break;
       }
 
       case 'announce': {
-        // An existing peer announced themselves in response to our join signal
         if (data.targetId === this.myUserId && data.user) {
           this.onParticipantJoinedCallbacks.forEach((cb) =>
             cb(data.user, data.isMuted, data.isScreenSharing)
           );
+          if (!this.peers.has(data.senderId) && this.myUserId < data.senderId) {
+            await this.createAndSendOffer(data.senderId);
+          }
         }
         break;
       }
@@ -566,6 +736,11 @@ class WebRTCManager {
           audioEl.remove();
           this.remoteAudioElements.delete(data.senderId);
         }
+
+        this.pendingCandidates.delete(data.senderId);
+        this.makingOffer.delete(data.senderId);
+        this.ignoreOffer.delete(data.senderId);
+        this.screenSenders.delete(data.senderId);
 
         this.onParticipantLeftCallbacks.forEach((cb) => cb(data.senderId));
         break;
@@ -597,17 +772,48 @@ class WebRTCManager {
           let pc = this.peers.get(data.senderId);
           if (!pc) pc = this.createPeerConnection(data.senderId);
 
-          await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
+          const isPolite = this.myUserId < data.senderId;
+          const offerCollision =
+            this.makingOffer.get(data.senderId) || pc.signalingState !== 'stable';
 
-          this.sendSignal({
-            type: 'answer',
-            sdp: answer,
-            targetId: data.senderId,
-            senderId: this.myUserId,
-            channelId: this.currentChannelId || '',
-          });
+          this.ignoreOffer.set(data.senderId, !isPolite && offerCollision);
+
+          if (this.ignoreOffer.get(data.senderId)) {
+            return;
+          }
+
+          if (offerCollision && isPolite) {
+            try {
+              await pc.setLocalDescription({ type: 'rollback' });
+            } catch {}
+          }
+
+          try {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+
+            // Flush pending ICE candidates
+            const queued = this.pendingCandidates.get(data.senderId) || [];
+            this.pendingCandidates.delete(data.senderId);
+            for (const cand of queued) {
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate(cand));
+              } catch {}
+            }
+
+            const answer = await pc.createAnswer();
+            const optimizedAnswerSdp = injectLowLatencySdp(answer.sdp || '');
+            await pc.setLocalDescription({ type: answer.type, sdp: optimizedAnswerSdp });
+
+            this.sendSignal({
+              type: 'answer',
+              sdp: { type: answer.type, sdp: optimizedAnswerSdp },
+              targetId: data.senderId,
+              senderId: this.myUserId,
+              channelId: this.currentChannelId || '',
+            });
+          } catch (err) {
+            console.warn('Error handling offer:', err);
+          }
         }
         break;
       }
@@ -615,22 +821,40 @@ class WebRTCManager {
       case 'answer': {
         if (data.targetId === this.myUserId) {
           const pc = this.peers.get(data.senderId);
-          if (pc) {
-            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          if (pc && pc.signalingState === 'have-local-offer') {
+            try {
+              await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+
+              // Flush pending ICE candidates
+              const queued = this.pendingCandidates.get(data.senderId) || [];
+              this.pendingCandidates.delete(data.senderId);
+              for (const cand of queued) {
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(cand));
+                } catch {}
+              }
+            } catch (err) {
+              console.warn('Error setting remote answer:', err);
+            }
           }
         }
         break;
       }
 
       case 'candidate': {
-        if (data.targetId === this.myUserId) {
+        if (data.targetId === this.myUserId && data.candidate) {
           const pc = this.peers.get(data.senderId);
-          if (pc && data.candidate) {
+          if (pc && pc.remoteDescription && pc.remoteDescription.type) {
             try {
               await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
             } catch (err) {
               console.warn('ICE candidate error:', err);
             }
+          } else {
+            // Queue candidate until remote description is applied
+            const list = this.pendingCandidates.get(data.senderId) || [];
+            list.push(data.candidate);
+            this.pendingCandidates.set(data.senderId, list);
           }
         }
         break;

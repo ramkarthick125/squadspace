@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Gamepad2, User, Lock, Sparkles, ShieldCheck, LogOut, Mic, Volume2 } from 'lucide-react';
+import { X, Gamepad2, User, Lock, Sparkles, ShieldCheck, LogOut, Mic, Volume2, Keyboard, RotateCcw, Radio } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { authService } from '../../lib/authService';
+import { useSettingsStore, formatKeyDisplay, KeybindConfig } from '../../store/useSettingsStore';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -11,14 +12,59 @@ interface ProfileModalProps {
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onLogoutRequested }) => {
   const { currentUser, updateProfile, updateCustomStatus, updateGamingActivity, logout } = useAuthStore();
+  const {
+    inputMode,
+    setInputMode,
+    keybinds,
+    setKeybind,
+    pttReleaseDelay,
+    setPttReleaseDelay,
+    resetKeybinds,
+  } = useSettingsStore();
 
   const [displayName, setDisplayName] = useState(currentUser?.displayName || '');
   const [aboutMe, setAboutMe] = useState(currentUser?.aboutMe || '');
   const [customStatus, setCustomStatus] = useState(currentUser?.customStatus || '');
   const [game, setGame] = useState(currentUser?.gamingActivity?.game || '');
   const [gameDetails, setGameDetails] = useState(currentUser?.gamingActivity?.details || '');
-  const [activeTab, setActiveTab] = useState<'profile' | 'activity' | 'voice' | 'security'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'activity' | 'voice' | 'keybinds' | 'security'>('profile');
   const [savedNotification, setSavedNotification] = useState(false);
+  const [recordingKeybindFor, setRecordingKeybindFor] = useState<keyof KeybindConfig | null>(null);
+
+  // Key recording listener
+  useEffect(() => {
+    if (!recordingKeybindFor) return;
+
+    const handleKeyRecord = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Don't record lonely Escape (use it to cancel recording)
+      if (e.key === 'Escape' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+        setRecordingKeybindFor(null);
+        return;
+      }
+
+      // Build key combination
+      let combo = '';
+      if (e.ctrlKey) combo += 'Ctrl+';
+      if (e.shiftKey) combo += 'Shift+';
+      if (e.altKey) combo += 'Alt+';
+
+      // Pick clean key identifier
+      let key = e.code;
+      if (key.startsWith('Key')) key = key.slice(3);
+      combo += key;
+
+      setKeybind(recordingKeybindFor, combo);
+      setRecordingKeybindFor(null);
+    };
+
+    window.addEventListener('keydown', handleKeyRecord, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', handleKeyRecord, { capture: true });
+    };
+  }, [recordingKeybindFor, setKeybind]);
 
   useEffect(() => {
     if (currentUser) {
@@ -170,6 +216,18 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
               </button>
 
               <button
+                onClick={() => setActiveTab('keybinds')}
+                className={`w-full text-left px-2.5 py-1.5 rounded text-sm font-semibold flex items-center gap-2 transition-colors ${
+                  activeTab === 'keybinds'
+                    ? 'bg-discord-active text-white'
+                    : 'text-discord-gray-300 hover:bg-discord-hover'
+                }`}
+              >
+                <Keyboard className="w-4 h-4" />
+                <span>Keybinds</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab('security')}
                 className={`w-full text-left px-2.5 py-1.5 rounded text-sm font-semibold flex items-center gap-2 transition-colors ${
                   activeTab === 'security'
@@ -211,6 +269,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
               {activeTab === 'profile' && 'User Profile'}
               {activeTab === 'activity' && 'Gaming & Activity Status'}
               {activeTab === 'voice' && 'Voice & Video Settings'}
+              {activeTab === 'keybinds' && 'Keybinds & Shortcuts'}
               {activeTab === 'security' && 'Account Security'}
             </h2>
             <button
@@ -358,6 +417,126 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
 
             {activeTab === 'voice' && (
               <div className="space-y-6">
+                {/* Input Mode Selector: Voice Activity vs Push to Talk */}
+                <div>
+                  <label className="block text-xs font-bold text-discord-gray-300 uppercase tracking-wider mb-2">
+                    Input Mode
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Voice Activity Card */}
+                    <div
+                      onClick={() => setInputMode('open_mic')}
+                      className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                        inputMode === 'open_mic'
+                          ? 'bg-discord-blurple/10 border-discord-blurple ring-1 ring-discord-blurple'
+                          : 'bg-discord-sidebar/60 border-discord-darkest hover:border-discord-gray-500'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="font-bold text-sm text-white">Voice Activity</span>
+                        <div
+                          className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                            inputMode === 'open_mic'
+                              ? 'border-discord-blurple bg-discord-blurple text-white'
+                              : 'border-discord-gray-500'
+                          }`}
+                        >
+                          {inputMode === 'open_mic' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-discord-gray-400 leading-relaxed">
+                        Transmits automatically when you speak. Ideal for relaxed hangouts.
+                      </p>
+                    </div>
+
+                    {/* Push-to-Talk Card */}
+                    <div
+                      onClick={() => setInputMode('push_to_talk')}
+                      className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                        inputMode === 'push_to_talk'
+                          ? 'bg-discord-blurple/10 border-discord-blurple ring-1 ring-discord-blurple'
+                          : 'bg-discord-sidebar/60 border-discord-darkest hover:border-discord-gray-500'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="font-bold text-sm text-white">Push to Talk</span>
+                        <div
+                          className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                            inputMode === 'push_to_talk'
+                              ? 'border-discord-blurple bg-discord-blurple text-white'
+                              : 'border-discord-gray-500'
+                          }`}
+                        >
+                          {inputMode === 'push_to_talk' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-discord-gray-400 leading-relaxed">
+                        Hold down a key to transmit your voice. Best for competitive gaming and noisy rooms.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Push-to-Talk Configuration Details */}
+                {inputMode === 'push_to_talk' && (
+                  <div className="bg-discord-sidebar p-4 rounded-xl border border-discord-darkest space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-bold text-discord-gray-200 uppercase tracking-wider block">
+                          Shortcut Key
+                        </span>
+                        <p className="text-[11px] text-discord-gray-400 mt-0.5">
+                          Hold this key down to speak in voice channels.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setRecordingKeybindFor(recordingKeybindFor === 'pushToTalk' ? null : 'pushToTalk')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                          recordingKeybindFor === 'pushToTalk'
+                            ? 'bg-discord-red text-white border-discord-red animate-pulse'
+                            : 'bg-discord-darkest hover:bg-discord-hover text-white border-[#313338]'
+                        }`}
+                      >
+                        {recordingKeybindFor === 'pushToTalk'
+                          ? 'Press any key...'
+                          : formatKeyDisplay(keybinds.pushToTalk)}
+                      </button>
+                    </div>
+
+                    {recordingKeybindFor === 'pushToTalk' && (
+                      <p className="text-[11px] text-discord-yellow font-medium">
+                        Press the key or mouse key you want to use for Push to Talk. Press Esc to cancel.
+                      </p>
+                    )}
+
+                    {/* Release Delay Slider */}
+                    <div className="pt-2 border-t border-discord-darkest/60">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xs font-bold text-discord-gray-300">
+                          Push to Talk Release Delay
+                        </span>
+                        <span className="text-xs font-mono text-discord-blurple font-bold">
+                          {pttReleaseDelay} ms
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="2000"
+                        step="50"
+                        value={pttReleaseDelay}
+                        onChange={(e) => setPttReleaseDelay(Number(e.target.value))}
+                        className="w-full accent-discord-blurple cursor-pointer"
+                      />
+                      <p className="text-[10px] text-discord-gray-400 mt-1">
+                        Keeps the microphone active briefly after releasing the key so your words aren't cut off.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Microphone Test */}
                 <div>
                   <h3 className="text-sm font-bold text-discord-gray-200 uppercase tracking-wider mb-2">
                     Microphone Test & Real Hardware Check
@@ -403,11 +582,118 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                 </div>
 
                 <div className="p-3 bg-discord-sidebar/60 border border-discord-darkest rounded-lg text-xs text-discord-gray-300 space-y-1">
-                  <span className="font-semibold text-white block">Echo Cancellation & Noise Suppression</span>
+                  <span className="font-semibold text-white block">Echo Cancellation & Studio Filters</span>
                   <p className="text-discord-gray-400 text-[11px]">
-                    Automatic gain control and WebRTC noise filters are enabled by default for studio-quality voice hangouts.
+                    WebRTC zero-delay echo cancellation and background noise suppression are active across all voice channels.
                   </p>
                 </div>
+              </div>
+            )}
+
+            {activeTab === 'keybinds' && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-discord-gray-200 uppercase tracking-wider">
+                      Configurable Keybindings
+                    </h3>
+                    <p className="text-xs text-discord-gray-400 mt-1">
+                      Configure your shortcut keys. In the desktop app, these work globally even while in full-screen games.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={resetKeybinds}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-discord-sidebar hover:bg-discord-hover text-discord-gray-300 hover:text-white text-xs font-semibold border border-discord-darkest transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Reset Defaults</span>
+                  </button>
+                </div>
+
+                {/* Keybinds Table */}
+                <div className="bg-discord-sidebar rounded-xl border border-discord-darkest overflow-hidden divide-y divide-discord-darkest/60">
+                  {/* Push to Talk Keybind */}
+                  <div className="p-4 flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-sm text-white block">Push to Talk</span>
+                      <span className="text-xs text-discord-gray-400">
+                        Activates microphone while held down in voice channels
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setRecordingKeybindFor(recordingKeybindFor === 'pushToTalk' ? null : 'pushToTalk')
+                      }
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                        recordingKeybindFor === 'pushToTalk'
+                          ? 'bg-discord-red text-white border-discord-red animate-pulse'
+                          : 'bg-discord-darkest hover:bg-discord-hover text-white border-[#313338]'
+                      }`}
+                    >
+                      {recordingKeybindFor === 'pushToTalk'
+                        ? 'Press any key...'
+                        : formatKeyDisplay(keybinds.pushToTalk)}
+                    </button>
+                  </div>
+
+                  {/* Toggle Mute Keybind */}
+                  <div className="p-4 flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-sm text-white block">Toggle Mute</span>
+                      <span className="text-xs text-discord-gray-400">
+                        Mutes or unmutes your microphone
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setRecordingKeybindFor(recordingKeybindFor === 'toggleMute' ? null : 'toggleMute')
+                      }
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                        recordingKeybindFor === 'toggleMute'
+                          ? 'bg-discord-red text-white border-discord-red animate-pulse'
+                          : 'bg-discord-darkest hover:bg-discord-hover text-white border-[#313338]'
+                      }`}
+                    >
+                      {recordingKeybindFor === 'toggleMute'
+                        ? 'Press keys...'
+                        : formatKeyDisplay(keybinds.toggleMute)}
+                    </button>
+                  </div>
+
+                  {/* Toggle Deafen Keybind */}
+                  <div className="p-4 flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-sm text-white block">Toggle Deafen</span>
+                      <span className="text-xs text-discord-gray-400">
+                        Mutes both microphone and incoming audio
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setRecordingKeybindFor(recordingKeybindFor === 'toggleDeafen' ? null : 'toggleDeafen')
+                      }
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                        recordingKeybindFor === 'toggleDeafen'
+                          ? 'bg-discord-red text-white border-discord-red animate-pulse'
+                          : 'bg-discord-darkest hover:bg-discord-hover text-white border-[#313338]'
+                      }`}
+                    >
+                      {recordingKeybindFor === 'toggleDeafen'
+                        ? 'Press keys...'
+                        : formatKeyDisplay(keybinds.toggleDeafen)}
+                    </button>
+                  </div>
+                </div>
+
+                {recordingKeybindFor && (
+                  <div className="p-3 rounded-lg bg-discord-blurple/10 border border-discord-blurple text-xs text-discord-blurple-light">
+                    Press any key or key combination (e.g. Right Ctrl, Space, T, Ctrl+M) to record the new keybind. Press Escape to cancel.
+                  </div>
+                )}
               </div>
             )}
 

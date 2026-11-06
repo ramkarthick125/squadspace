@@ -43,6 +43,12 @@ interface DMState {
     friend: UserProfile,
     currentUser: UserProfile
   ) => string;
+  editDM: (conversationId: string, messageId: string, content: string, currentUserId: string, recipientId?: string) => void;
+  deleteDM: (conversationId: string, messageId: string, currentUserId: string, recipientId?: string) => void;
+  toggleDMReaction: (conversationId: string, messageId: string, emoji: string, userId: string, recipientId?: string) => void;
+  receiveDMEdit: (conversationId: string, messageId: string, content: string) => void;
+  receiveDMDelete: (conversationId: string, messageId: string) => void;
+  receiveDMReaction: (conversationId: string, messageId: string, emoji: string, userId: string) => void;
   removeFriend: (userId: string, currentUserId?: string) => void;
   addFriendByUsername: (
     username: string,
@@ -265,6 +271,139 @@ export const useDMStore = create<DMState>((set, get) => ({
       title: `@${senderProfile.displayName || 'Direct Message'}`,
       body: message.content || 'Sent an attachment',
     });
+  },
+
+  editDM: (conversationId, messageId, content, currentUserId, recipientId) => {
+    const currentMsgs = get().dmMessages[conversationId] || [];
+    const updated = {
+      ...get().dmMessages,
+      [conversationId]: currentMsgs.map((m) =>
+        m.id === messageId ? { ...m, content, isEdited: true } : m
+      ),
+    };
+
+    set({ dmMessages: updated });
+    persistDMs(updated);
+
+    realtimeService.broadcastDMEdit(conversationId, messageId, content, currentUserId, recipientId);
+  },
+
+  deleteDM: (conversationId, messageId, currentUserId, recipientId) => {
+    const currentMsgs = get().dmMessages[conversationId] || [];
+    const updated = {
+      ...get().dmMessages,
+      [conversationId]: currentMsgs.filter((m) => m.id !== messageId),
+    };
+
+    set({ dmMessages: updated });
+    persistDMs(updated);
+
+    realtimeService.broadcastDMDelete(conversationId, messageId, currentUserId, recipientId);
+  },
+
+  toggleDMReaction: (conversationId, messageId, emoji, userId, recipientId) => {
+    const currentMsgs = get().dmMessages[conversationId] || [];
+    const updated = {
+      ...get().dmMessages,
+      [conversationId]: currentMsgs.map((m) => {
+        if (m.id !== messageId) return m;
+
+        const reactions = m.reactions || [];
+        const existing = reactions.find((r) => r.emoji === emoji);
+        let newReactions;
+
+        if (existing) {
+          const hasReacted = existing.users.includes(userId);
+          if (hasReacted) {
+            const remaining = existing.users.filter((id) => id !== userId);
+            if (remaining.length === 0) {
+              newReactions = reactions.filter((r) => r.emoji !== emoji);
+            } else {
+              newReactions = reactions.map((r) =>
+                r.emoji === emoji ? { ...r, users: remaining, count: remaining.length } : r
+              );
+            }
+          } else {
+            newReactions = reactions.map((r) =>
+              r.emoji === emoji
+                ? { ...r, users: [...r.users, userId], count: r.count + 1 }
+                : r
+            );
+          }
+        } else {
+          newReactions = [...reactions, { emoji, users: [userId], count: 1 }];
+        }
+
+        return { ...m, reactions: newReactions };
+      }),
+    };
+
+    set({ dmMessages: updated });
+    persistDMs(updated);
+
+    realtimeService.broadcastDMReaction(conversationId, messageId, emoji, userId, recipientId);
+  },
+
+  receiveDMEdit: (conversationId, messageId, content) => {
+    const currentMsgs = get().dmMessages[conversationId] || [];
+    const updated = {
+      ...get().dmMessages,
+      [conversationId]: currentMsgs.map((m) =>
+        m.id === messageId ? { ...m, content, isEdited: true } : m
+      ),
+    };
+    set({ dmMessages: updated });
+    persistDMs(updated);
+  },
+
+  receiveDMDelete: (conversationId, messageId) => {
+    const currentMsgs = get().dmMessages[conversationId] || [];
+    const updated = {
+      ...get().dmMessages,
+      [conversationId]: currentMsgs.filter((m) => m.id !== messageId),
+    };
+    set({ dmMessages: updated });
+    persistDMs(updated);
+  },
+
+  receiveDMReaction: (conversationId, messageId, emoji, userId) => {
+    const currentMsgs = get().dmMessages[conversationId] || [];
+    const updated = {
+      ...get().dmMessages,
+      [conversationId]: currentMsgs.map((m) => {
+        if (m.id !== messageId) return m;
+
+        const reactions = m.reactions || [];
+        const existing = reactions.find((r) => r.emoji === emoji);
+        let newReactions;
+
+        if (existing) {
+          const hasReacted = existing.users.includes(userId);
+          if (hasReacted) {
+            const remaining = existing.users.filter((id) => id !== userId);
+            if (remaining.length === 0) {
+              newReactions = reactions.filter((r) => r.emoji !== emoji);
+            } else {
+              newReactions = reactions.map((r) =>
+                r.emoji === emoji ? { ...r, users: remaining, count: remaining.length } : r
+              );
+            }
+          } else {
+            newReactions = reactions.map((r) =>
+              r.emoji === emoji
+                ? { ...r, users: [...r.users, userId], count: r.count + 1 }
+                : r
+            );
+          }
+        } else {
+          newReactions = [...reactions, { emoji, users: [userId], count: 1 }];
+        }
+
+        return { ...m, reactions: newReactions };
+      }),
+    };
+    set({ dmMessages: updated });
+    persistDMs(updated);
   },
 
   receiveFriendRequest: (senderProfile) => {

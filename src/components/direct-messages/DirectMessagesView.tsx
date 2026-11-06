@@ -7,6 +7,8 @@ import {
   Circle,
   Gamepad2,
   Trash2,
+  Pencil,
+  Smile,
   Send,
   Sparkles,
   Key,
@@ -37,12 +39,18 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
     setActiveConversation,
     dmMessages,
     sendDM,
+    editDM,
+    deleteDM,
+    toggleDMReaction,
     sendServerInviteDM,
     friends,
     startOrOpenDM,
     addFriendByUsername,
     initDMStore,
   } = useDMStore();
+
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState<string>('');
 
   useEffect(() => {
     if (currentUser) {
@@ -264,102 +272,236 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
             </div>
 
             {/* Messages */}
-            <div className="space-y-3">
-              {messages.map((msg) => (
-                <div key={msg.id} className="flex gap-3 hover:bg-discord-hover/30 px-2 py-1 rounded">
-                  <img
-                    src={msg.sender.avatarUrl}
-                    alt={msg.sender.displayName}
-                    className="w-9 h-9 rounded-full object-cover"
-                  />
-                  <div>
-                    <div className="flex items-center gap-2 leading-none mb-1">
-                      <span className="font-semibold text-sm text-discord-gray-100">
-                        {msg.sender.displayName}
-                      </span>
-                      <span className="text-[10px] text-discord-gray-500">
-                        {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                    <p className="text-sm text-discord-gray-200 select-text leading-relaxed">
-                      {msg.content}
-                    </p>
+            <div className="space-y-2">
+              {messages.map((msg) => {
+                const isAuthor = currentUser ? msg.senderId === currentUser.id : false;
+                const isEditingThis = editingMessageId === msg.id;
+                const quickEmojis = ['👍', '❤️', '🔥', '😂'];
 
-                    {/* Rich Cards for Server Invites and Friend Requests */}
-                    {msg.attachments?.map((att) => {
-                      if (att.type === 'server_invite') {
-                        return (
-                          <div
-                            key={att.id}
-                            className="mt-2.5 bg-[#2b2d31] border border-[#1e1f22] rounded-xl p-3.5 max-w-sm shadow-xl"
-                          >
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-discord-gray-400 block mb-2">
-                              You've Been Invited to Join a Server
-                            </span>
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="flex items-center gap-3">
-                                <div className="w-11 h-11 rounded-2xl bg-discord-blurple flex items-center justify-center text-xl font-bold text-white shadow">
-                                  🚀
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="font-bold text-sm text-white truncate">
-                                    {att.name || 'SquadSpace Hangout'}
-                                  </div>
-                                  <div className="text-[11px] text-discord-gray-400 font-mono">
-                                    Code: {att.url}
-                                  </div>
-                                </div>
-                              </div>
-                              <button
-                                onClick={async () => {
-                                  if (!currentUser) return;
-                                  const res = await authService.joinServerWithCode(att.url, currentUser.id);
-                                  if (res.success) {
-                                    await fetchServerData(res.serverId);
-                                    setActiveView('server');
-                                  } else {
-                                    alert(res.error || 'Failed to join server');
+                return (
+                  <div
+                    key={msg.id}
+                    className="relative group flex gap-3 hover:bg-discord-hover/30 px-3 py-1.5 rounded transition-colors"
+                  >
+                    <img
+                      src={msg.sender.avatarUrl}
+                      alt={msg.sender.displayName}
+                      className="w-9 h-9 rounded-full object-cover flex-shrink-0 mt-0.5"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 leading-none mb-1">
+                        <span className="font-semibold text-sm text-discord-gray-100">
+                          {msg.sender.displayName}
+                        </span>
+                        <span className="text-[10px] text-discord-gray-500">
+                          {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+
+                      {/* Content or Edit Input */}
+                      {isEditingThis ? (
+                        <div className="mt-1 space-y-1">
+                          <input
+                            type="text"
+                            value={editContent}
+                            onChange={(e) => setEditContent(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                if (editContent.trim() && activeConversationId && currentUser) {
+                                  editDM(activeConversationId, msg.id, editContent.trim(), currentUser.id, activeRecipient?.id);
+                                  setEditingMessageId(null);
+                                }
+                              } else if (e.key === 'Escape') {
+                                setEditingMessageId(null);
+                              }
+                            }}
+                            className="w-full bg-discord-input text-sm text-discord-gray-100 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-discord-blurple"
+                            autoFocus
+                          />
+                          <div className="text-[11px] text-discord-gray-400 flex items-center gap-2">
+                            <span>
+                              escape to{' '}
+                              <strong
+                                className="text-discord-blurple cursor-pointer"
+                                onClick={() => setEditingMessageId(null)}
+                              >
+                                cancel
+                              </strong>{' '}
+                              • enter to{' '}
+                              <strong
+                                className="text-discord-green cursor-pointer"
+                                onClick={() => {
+                                  if (editContent.trim() && activeConversationId && currentUser) {
+                                    editDM(activeConversationId, msg.id, editContent.trim(), currentUser.id, activeRecipient?.id);
+                                    setEditingMessageId(null);
                                   }
                                 }}
-                                className="px-3.5 py-1.5 rounded-lg bg-discord-green hover:bg-discord-green/90 text-white font-bold text-xs shadow transition flex-shrink-0 cursor-pointer"
                               >
-                                Join Server
+                                save
+                              </strong>
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-discord-gray-200 select-text leading-relaxed break-words">
+                          {msg.content}
+                          {msg.isEdited && (
+                            <span className="text-[10px] text-discord-gray-500 ml-1.5 select-none">
+                              (edited)
+                            </span>
+                          )}
+                        </p>
+                      )}
+
+                      {/* Rich Cards for Server Invites and Friend Requests */}
+                      {msg.attachments?.map((att) => {
+                        if (att.type === 'server_invite') {
+                          return (
+                            <div
+                              key={att.id}
+                              className="mt-2.5 bg-[#2b2d31] border border-[#1e1f22] rounded-xl p-3.5 max-w-sm shadow-xl"
+                            >
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-discord-gray-400 block mb-2">
+                                You've Been Invited to Join a Server
+                              </span>
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-11 h-11 rounded-2xl bg-discord-blurple flex items-center justify-center text-xl font-bold text-white shadow">
+                                    🚀
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="font-bold text-sm text-white truncate">
+                                      {att.name || 'SquadSpace Hangout'}
+                                    </div>
+                                    <div className="text-[11px] text-discord-gray-400 font-mono">
+                                      Code: {att.url}
+                                    </div>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={async () => {
+                                    if (!currentUser) return;
+                                    const res = await authService.joinServerWithCode(att.url, currentUser.id);
+                                    if (res.success) {
+                                      await fetchServerData(res.serverId);
+                                      setActiveView('server');
+                                    } else {
+                                      alert(res.error || 'Failed to join server');
+                                    }
+                                  }}
+                                  className="px-3.5 py-1.5 rounded-lg bg-discord-green hover:bg-discord-green/90 text-white font-bold text-xs shadow transition flex-shrink-0 cursor-pointer"
+                                >
+                                  Join Server
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        if (att.type === 'friend_invite') {
+                          return (
+                            <div
+                              key={att.id}
+                              className="mt-2 bg-[#2b2d31] border border-[#1e1f22] rounded-xl p-3 max-w-sm shadow flex items-center gap-2.5"
+                            >
+                              <UserPlus className="w-5 h-5 text-discord-green flex-shrink-0" />
+                              <div className="text-xs text-discord-gray-200">
+                                <strong>{msg.sender.displayName}</strong> connected with you as a friend!
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        if (att.type === 'image') {
+                          return (
+                            <img
+                              key={att.id}
+                              src={att.url}
+                              alt={att.name}
+                              className="max-w-xs max-h-60 rounded-lg mt-2 object-cover border border-discord-darkest"
+                            />
+                          );
+                        }
+
+                        return null;
+                      })}
+
+                      {/* Emoji Reactions Badge List */}
+                      {msg.reactions && msg.reactions.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-1.5 select-none">
+                          {msg.reactions.map((r) => {
+                            const hasReacted = currentUser ? r.users.includes(currentUser.id) : false;
+                            return (
+                              <button
+                                key={r.emoji}
+                                onClick={() => {
+                                  if (currentUser && activeConversationId) {
+                                    toggleDMReaction(activeConversationId, msg.id, r.emoji, currentUser.id, activeRecipient?.id);
+                                  }
+                                }}
+                                className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border transition-colors ${
+                                  hasReacted
+                                    ? 'bg-discord-blurple/20 border-discord-blurple text-discord-blurple-light'
+                                    : 'bg-discord-sidebar/60 border-transparent hover:bg-discord-sidebar text-discord-gray-300'
+                                }`}
+                              >
+                                <span>{r.emoji}</span>
+                                <span>{r.count}</span>
                               </button>
-                            </div>
-                          </div>
-                        );
-                      }
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
 
-                      if (att.type === 'friend_invite') {
-                        return (
-                          <div
-                            key={att.id}
-                            className="mt-2 bg-[#2b2d31] border border-[#1e1f22] rounded-xl p-3 max-w-sm shadow flex items-center gap-2.5"
-                          >
-                            <UserPlus className="w-5 h-5 text-discord-green flex-shrink-0" />
-                            <div className="text-xs text-discord-gray-200">
-                              <strong>{msg.sender.displayName}</strong> connected with you as a friend!
-                            </div>
-                          </div>
-                        );
-                      }
+                    {/* Floating Hover Toolbar (Edit, Delete, React) */}
+                    <div className="absolute right-3 -top-2.5 hidden group-hover:flex items-center bg-[#2b2d31] border border-[#232428] rounded-md shadow-md overflow-hidden z-10 select-none">
+                      {quickEmojis.map((emoji) => (
+                        <button
+                          key={emoji}
+                          onClick={() => {
+                            if (currentUser && activeConversationId) {
+                              toggleDMReaction(activeConversationId, msg.id, emoji, currentUser.id, activeRecipient?.id);
+                            }
+                          }}
+                          className="p-1.5 hover:bg-discord-hover text-sm hover:text-white transition-colors"
+                          title={`React with ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
 
-                      if (att.type === 'image') {
-                        return (
-                          <img
-                            key={att.id}
-                            src={att.url}
-                            alt={att.name}
-                            className="max-w-xs max-h-60 rounded-lg mt-2 object-cover border border-discord-darkest"
-                          />
-                        );
-                      }
+                      {isAuthor && (
+                        <button
+                          onClick={() => {
+                            setEditingMessageId(msg.id);
+                            setEditContent(msg.content);
+                          }}
+                          className="p-1.5 hover:bg-discord-hover text-discord-gray-300 hover:text-white transition-colors"
+                          title="Edit Message"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      )}
 
-                      return null;
-                    })}
+                      {isAuthor && (
+                        <button
+                          onClick={() => {
+                            if (activeConversationId && currentUser) {
+                              deleteDM(activeConversationId, msg.id, currentUser.id, activeRecipient?.id);
+                            }
+                          }}
+                          className="p-1.5 hover:bg-discord-hover text-discord-red transition-colors"
+                          title="Delete Message"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

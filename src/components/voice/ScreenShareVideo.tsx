@@ -36,11 +36,13 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
   const [showControls, setShowControls] = useState<boolean>(true);
   const [controlsTimeout, setControlsTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
 
-  // Attach stream to video element
+  // Attach stream to video element with ultra-low latency settings
   useEffect(() => {
     if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
-      videoRef.current.play().catch(() => {});
+      const v = videoRef.current;
+      v.srcObject = stream;
+      v.playbackRate = 1.0;
+      v.play().catch(() => {});
     }
   }, [stream]);
 
