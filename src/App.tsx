@@ -7,6 +7,7 @@ import { MemberSidebar } from './components/layout/MemberSidebar';
 import { ChatArea } from './components/chat/ChatArea';
 import { VoiceRoom } from './components/voice/VoiceRoom';
 import { DirectMessagesView } from './components/direct-messages/DirectMessagesView';
+import { DiscordTitleBar } from './components/layout/DiscordTitleBar';
 import { ProfileModal } from './components/modals/ProfileModal';
 import { ChannelModal } from './components/modals/ChannelModal';
 import { ServerSettingsModal } from './components/modals/ServerSettingsModal';
@@ -175,9 +176,11 @@ export function App() {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-discord-darkest text-discord-gray-200 select-none font-sans">
-      {/* LiveKit Voice SFU WebRTC Background Manager */}
-      <LiveKitVoiceManager />
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-discord-darkest text-discord-gray-200 select-none font-sans">
+      <DiscordTitleBar />
+      <div className="flex flex-1 min-h-0 w-full overflow-hidden">
+        {/* LiveKit Voice SFU WebRTC Background Manager */}
+        <LiveKitVoiceManager />
 
       {/* 1. Leftmost Server Rail */}
       <ServerRail
@@ -340,6 +343,7 @@ export function App() {
         onClose={() => setIsAuthModalOpen(false)}
         initialInviteCode={urlInviteCode || undefined}
       />
+      </div>
     </div>
   );
 }

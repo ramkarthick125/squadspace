@@ -28,7 +28,7 @@ interface VoiceState {
   toggleScreenShare: (
     currentUser: UserProfile,
     preset?: ScreenSharePreset,
-    options?: { systemAudio?: boolean }
+    options?: { systemAudio?: boolean; sourceId?: string }
   ) => Promise<void>;
   setSpeaking: (channelId: string, userId: string, isSpeaking: boolean) => void;
 }

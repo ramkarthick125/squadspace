@@ -188,10 +188,11 @@ class WebRTCManager {
 
   /**
    * Start real screen sharing with advanced resolution and framerate settings
+   * Supports both Electron Native desktopCapturer (sourceId) and Web getDisplayMedia
    */
   async startScreenShare(
     presetKey: ScreenSharePreset = '1080p-60',
-    options?: { systemAudio?: boolean }
+    options?: { systemAudio?: boolean; sourceId?: string }
   ): Promise<MediaStream | null> {
     const preset =
       SCREEN_SHARE_PRESETS[presetKey] ||
@@ -199,22 +200,46 @@ class WebRTCManager {
       SCREEN_SHARE_PRESETS.balanced;
 
     try {
-      // Clean modern displayMedia constraints: allows user to pick application window, tab or screen
-      this.localScreenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          frameRate: { ideal: preset.frameRate, max: preset.frameRate },
-          width: { ideal: preset.resolution.width, max: preset.resolution.width },
-          height: { ideal: preset.resolution.height, max: preset.resolution.height },
-        },
-        audio:
-          options?.systemAudio !== false
-            ? {
-                echoCancellation: false,
-                noiseSuppression: false,
-                autoGainControl: false,
-              }
-            : false,
-      });
+      if (options?.sourceId) {
+        // Native Electron capture directly from selected window / screen
+        const constraints: any = {
+          audio:
+            options?.systemAudio !== false
+              ? {
+                  mandatory: {
+                    chromeMediaSource: 'desktop',
+                  },
+                }
+              : false,
+          video: {
+            mandatory: {
+              chromeMediaSource: 'desktop',
+              chromeMediaSourceId: options.sourceId,
+              maxFrameRate: preset.frameRate,
+              maxWidth: preset.resolution.width,
+              maxHeight: preset.resolution.height,
+            },
+          },
+        };
+        this.localScreenStream = await navigator.mediaDevices.getUserMedia(constraints);
+      } else {
+        // Web / PWA fallback displayMedia constraints
+        this.localScreenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            frameRate: { ideal: preset.frameRate, max: preset.frameRate },
+            width: { ideal: preset.resolution.width, max: preset.resolution.width },
+            height: { ideal: preset.resolution.height, max: preset.resolution.height },
+          },
+          audio:
+            options?.systemAudio !== false
+              ? {
+                  echoCancellation: false,
+                  noiseSuppression: false,
+                  autoGainControl: false,
+                }
+              : false,
+        });
+      }
 
       this.localScreenStream.getVideoTracks()[0].onended = () => {
         this.stopScreenShare();

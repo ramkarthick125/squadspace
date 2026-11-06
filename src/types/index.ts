@@ -119,3 +119,31 @@ export interface ServerInvite {
   createdAt: string;
   expiresAt?: string;
 }
+
+export interface DesktopCaptureSource {
+  id: string;
+  name: string;
+  thumbnail: string | null;
+  appIcon: string | null;
+  display_id?: string;
+  isScreen: boolean;
+}
+
+export interface ElectronAPI {
+  isElectron: boolean;
+  minimize: () => void;
+  maximize: () => void;
+  close: () => void;
+  isMaximized: () => Promise<boolean>;
+  onMaximizeChange: (callback: (isMax: boolean) => void) => () => void;
+  getScreenSources: () => Promise<DesktopCaptureSource[]>;
+  onToggleMute: (callback: () => void) => () => void;
+  onToggleDeafen: (callback: () => void) => () => void;
+  onDeepLink: (callback: (url: string) => void) => () => void;
+}
+
+declare global {
+  interface Window {
+    electronAPI?: ElectronAPI;
+  }
+}

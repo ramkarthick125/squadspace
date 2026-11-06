@@ -65,7 +65,10 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
   // Check if any participant is actively streaming their screen
   const screenSharingParticipant = participants.find((p) => p.isScreenSharing);
 
-  const handleStartStream = (presetKey: ScreenSharePreset, options: { systemAudio: boolean }) => {
+  const handleStartStream = (
+    presetKey: ScreenSharePreset,
+    options: { systemAudio: boolean; sourceId?: string }
+  ) => {
     if (!currentUser) return;
     setStreamQuality(presetKey);
     toggleScreenShare(currentUser, presetKey, options);
