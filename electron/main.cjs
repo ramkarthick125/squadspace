@@ -7,8 +7,13 @@ const {
   Menu,
   globalShortcut,
   nativeImage,
+  session,
+  shell,
 } = require('electron');
 const path = require('path');
+
+// Live Hosted Deployment URL (Discord-style remote auto-updating shell)
+const REMOTE_APP_URL = process.env.SQUADSPACE_REMOTE_URL || 'https://squadspace-flame.vercel.app';
 
 // 1. Hardware Acceleration & Unthrottled Streaming GPU Flags
 app.commandLine.appendSwitch('enable-gpu-rasterization');
@@ -66,11 +71,56 @@ function createMainWindow() {
     mainWindow.webContents.send('window:maximized-change', false);
   });
 
-  // Allow F12 or Ctrl+Shift+I to toggle DevTools
+  // Keyboard shortcuts: DevTools (F12 / Ctrl+Shift+I) & Instant App Reload (Ctrl+R / F5)
   mainWindow.webContents.on('before-input-event', (event, input) => {
+    // DevTools
     if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
       mainWindow.webContents.toggleDevTools();
       event.preventDefault();
+      return;
+    }
+
+    // Hard Reload (Ctrl+Shift+R) - Clears cache and gets latest Vercel build
+    if (input.control && input.shift && input.key.toLowerCase() === 'r') {
+      mainWindow.webContents.reloadIgnoringCache();
+      event.preventDefault();
+      return;
+    }
+
+    // Soft Reload (Ctrl+R or F5) - Refreshes current state
+    if ((input.control && input.key.toLowerCase() === 'r') || input.key === 'F5') {
+      mainWindow.webContents.reload();
+      event.preventDefault();
+      return;
+    }
+  });
+
+  // Grant hardware microphone, audio, and notification permissions automatically
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const autoApproved = ['media', 'mediaKeySystem', 'notifications', 'fullscreen', 'pointerLock'];
+    callback(autoApproved.includes(permission));
+  });
+
+  // Open external links in default browser instead of navigating inside SquadSpace
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http:') || url.startsWith('https:')) {
+      shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('http://localhost') && !url.startsWith(REMOTE_APP_URL) && !url.startsWith('file://')) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+
+  // Fallback to local files if remote load fails (e.g. offline)
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    if (validatedURL && validatedURL.startsWith('http') && !validatedURL.includes('localhost')) {
+      console.warn(`Remote load failed (${errorCode}: ${errorDescription}), falling back to local files.`);
+      mainWindow.loadFile(path.join(__dirname, '../dist/index.html')).catch(() => {});
     }
   });
 
@@ -83,11 +133,14 @@ function createMainWindow() {
     }
   });
 
-  // Load URL
+  // Load URL: Dev Server -> Remote Live URL -> Local Fallback Bundle
   if (isDev && process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadURL(REMOTE_APP_URL).catch((err) => {
+      console.warn('Failed to load remote URL, falling back to local bundle:', err);
+      mainWindow.loadFile(path.join(__dirname, '../dist/index.html')).catch(() => {});
+    });
   }
 }
 
