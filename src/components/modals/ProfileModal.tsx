@@ -87,7 +87,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
     }
   };
 
-  // Key recording listener
+  // Key & Gaming Mouse recording listener
   useEffect(() => {
     if (!recordingKeybindFor) return;
 
@@ -116,9 +116,35 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
       setRecordingKeybindFor(null);
     };
 
+    const handleMouseRecord = (e: MouseEvent) => {
+      // Don't record normal left click so user can click to cancel or navigate
+      if (e.button === 0) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      let mouseKey = '';
+      if (e.button === 1) mouseKey = 'Mouse3';
+      else if (e.button === 2) mouseKey = 'Mouse2';
+      else if (e.button === 3) mouseKey = 'Mouse4';
+      else if (e.button === 4) mouseKey = 'Mouse5';
+      else mouseKey = `Mouse${e.button + 1}`;
+
+      let combo = '';
+      if (e.ctrlKey) combo += 'Ctrl+';
+      if (e.shiftKey) combo += 'Shift+';
+      if (e.altKey) combo += 'Alt+';
+      combo += mouseKey;
+
+      setKeybind(recordingKeybindFor, combo);
+      setRecordingKeybindFor(null);
+    };
+
     window.addEventListener('keydown', handleKeyRecord, { capture: true });
+    window.addEventListener('mousedown', handleMouseRecord, { capture: true });
     return () => {
       window.removeEventListener('keydown', handleKeyRecord, { capture: true });
+      window.removeEventListener('mousedown', handleMouseRecord, { capture: true });
     };
   }, [recordingKeybindFor, setKeybind]);
 
@@ -555,14 +581,74 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                         }`}
                       >
                         {recordingKeybindFor === 'pushToTalk'
-                          ? 'Press any key...'
+                          ? 'Press key or click mouse...'
                           : formatKeyDisplay(keybinds.pushToTalk)}
+                      </button>
+                    </div>
+
+                    {/* Quick presets for Gaming Mouse */}
+                    <div className="pt-1 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] text-discord-gray-400 mr-1 font-semibold">Quick Select:</span>
+                      <button
+                        type="button"
+                        onClick={() => setKeybind('pushToTalk', 'Mouse4')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          keybinds.pushToTalk === 'Mouse4'
+                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
+                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
+                        }`}
+                      >
+                        🖱️ Mouse 4 (Back)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setKeybind('pushToTalk', 'Mouse5')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          keybinds.pushToTalk === 'Mouse5'
+                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
+                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
+                        }`}
+                      >
+                        🖱️ Mouse 5 (Forward)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setKeybind('pushToTalk', 'Mouse3')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          keybinds.pushToTalk === 'Mouse3'
+                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
+                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
+                        }`}
+                      >
+                        Middle Click
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setKeybind('pushToTalk', 'ControlRight')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          keybinds.pushToTalk === 'ControlRight'
+                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
+                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
+                        }`}
+                      >
+                        Right Ctrl
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setKeybind('pushToTalk', 'Backquote')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          keybinds.pushToTalk === 'Backquote'
+                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
+                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
+                        }`}
+                      >
+                        ~ Tilde
                       </button>
                     </div>
 
                     {recordingKeybindFor === 'pushToTalk' && (
                       <p className="text-[11px] text-discord-yellow font-medium">
-                        Press the key or mouse key you want to use for Push to Talk. Press Esc to cancel.
+                        Press the key or mouse button (Mouse 4/5) you want to use for Push to Talk. Press Esc to cancel.
                       </p>
                     )}
 
@@ -670,28 +756,90 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                 {/* Keybinds Table */}
                 <div className="bg-discord-sidebar rounded-xl border border-discord-darkest overflow-hidden divide-y divide-discord-darkest/60">
                   {/* Push to Talk Keybind */}
-                  <div className="p-4 flex items-center justify-between">
-                    <div>
-                      <span className="font-bold text-sm text-white block">Push to Talk</span>
-                      <span className="text-xs text-discord-gray-400">
-                        Activates microphone while held down in voice channels
-                      </span>
+                  <div className="p-4 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="font-bold text-sm text-white block">Push to Talk</span>
+                        <span className="text-xs text-discord-gray-400">
+                          Activates microphone while held down. Supports keyboard keys and Gaming Mouse buttons (Mouse 4, Mouse 5, Middle Click).
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRecordingKeybindFor(recordingKeybindFor === 'pushToTalk' ? null : 'pushToTalk')
+                        }
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                          recordingKeybindFor === 'pushToTalk'
+                            ? 'bg-discord-red text-white border-discord-red animate-pulse'
+                            : 'bg-discord-darkest hover:bg-discord-hover text-white border-[#313338]'
+                        }`}
+                      >
+                        {recordingKeybindFor === 'pushToTalk'
+                          ? 'Click mouse or press key...'
+                          : formatKeyDisplay(keybinds.pushToTalk)}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setRecordingKeybindFor(recordingKeybindFor === 'pushToTalk' ? null : 'pushToTalk')
-                      }
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-                        recordingKeybindFor === 'pushToTalk'
-                          ? 'bg-discord-red text-white border-discord-red animate-pulse'
-                          : 'bg-discord-darkest hover:bg-discord-hover text-white border-[#313338]'
-                      }`}
-                    >
-                      {recordingKeybindFor === 'pushToTalk'
-                        ? 'Press any key...'
-                        : formatKeyDisplay(keybinds.pushToTalk)}
-                    </button>
+
+                    {/* Quick presets for Gaming Mouse */}
+                    <div className="pt-1 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] text-discord-gray-400 mr-1 font-semibold">Quick Select:</span>
+                      <button
+                        type="button"
+                        onClick={() => setKeybind('pushToTalk', 'Mouse4')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          keybinds.pushToTalk === 'Mouse4'
+                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
+                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
+                        }`}
+                      >
+                        🖱️ Mouse 4 (Back)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setKeybind('pushToTalk', 'Mouse5')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          keybinds.pushToTalk === 'Mouse5'
+                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
+                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
+                        }`}
+                      >
+                        🖱️ Mouse 5 (Forward)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setKeybind('pushToTalk', 'Mouse3')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          keybinds.pushToTalk === 'Mouse3'
+                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
+                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
+                        }`}
+                      >
+                        Middle Click
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setKeybind('pushToTalk', 'ControlRight')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          keybinds.pushToTalk === 'ControlRight'
+                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
+                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
+                        }`}
+                      >
+                        Right Ctrl
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setKeybind('pushToTalk', 'Backquote')}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          keybinds.pushToTalk === 'Backquote'
+                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
+                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
+                        }`}
+                      >
+                        ` (Tilde)
+                      </button>
+                    </div>
                   </div>
 
                   {/* Toggle Mute Keybind */}

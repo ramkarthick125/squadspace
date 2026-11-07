@@ -47,6 +47,7 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
     isDeafened,
     isScreenSharing,
     screenShareStream,
+    screenShareParticipantId,
     micVolumeLevel,
     engineMode,
     setEngineMode,
@@ -83,8 +84,26 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
   const isConnected = activeVoiceChannelId === channel.id;
   const participants = participantsByChannel[channel.id] || [];
 
-  // Check if any participant is actively streaming their screen
-  const screenSharingParticipant = participants.find((p) => p.isScreenSharing);
+  // Check if any participant is actively streaming their screen (or if remote stream is active)
+  const screenSharingParticipant =
+    participants.find((p) => p.isScreenSharing || p.userId === screenShareParticipantId) ||
+    (screenShareStream
+      ? {
+          userId: screenShareParticipantId || 'remote-screen',
+          user: {
+            id: screenShareParticipantId || 'remote-screen',
+            displayName: 'Live Stream',
+            username: 'streamer',
+            avatarUrl: '',
+            status: 'online' as const,
+          },
+          isMuted: false,
+          isDeafened: false,
+          isSpeaking: false,
+          isScreenSharing: true,
+          joinedAt: new Date().toISOString(),
+        }
+      : null);
 
   const handleStartStream = (
     presetKey: ScreenSharePreset,
@@ -115,48 +134,53 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Co-op Remote Play Header Action (When sharing or viewing screen) */}
-            {(isScreenSharing || screenSharingParticipant) && (
-              <>
-                {screenSharingParticipant?.userId === currentUser?.id ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!isCoopHost && currentUser) {
-                        startHostCoop(currentUser.id);
-                      } else {
-                        setPanelOpen(!isPanelOpen);
-                      }
-                    }}
-                    className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition shadow cursor-pointer border ${
-                      isCoopHost
-                        ? 'bg-indigo-600 border-indigo-400 text-white shadow-indigo-600/40'
-                        : 'bg-indigo-600/30 hover:bg-indigo-600 border-indigo-500/40 text-indigo-200 hover:text-white'
-                    }`}
-                  >
-                    <Gamepad2 className="w-4 h-4" />
-                    <span>
-                      {isCoopHost
-                        ? `Co-op Active (${players.length})`
-                        : '🎮 Enable Co-op Play'}
-                    </span>
-                    {pendingRequests.length > 0 && (
-                      <span className="w-4 h-4 rounded-full bg-amber-400 text-black text-[10px] font-bold flex items-center justify-center animate-bounce">
-                        {pendingRequests.length}
-                      </span>
-                    )}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setIsJoinModalOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow transition cursor-pointer border border-indigo-400/40"
-                  >
-                    <Gamepad2 className="w-4 h-4" />
-                    <span>{mySlot ? `Playing as P${mySlot}` : '🎮 Play Co-op (Join)'}</span>
-                  </button>
+            {/* Co-op Remote Play Header Action (Always Visible!) */}
+            {isScreenSharing ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isCoopHost && currentUser) {
+                    startHostCoop(currentUser.id);
+                  } else {
+                    setPanelOpen(!isPanelOpen);
+                  }
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition shadow cursor-pointer border ${
+                  isCoopHost
+                    ? 'bg-indigo-600 border-indigo-400 text-white shadow-indigo-600/40'
+                    : 'bg-indigo-600/30 hover:bg-indigo-600 border-indigo-500/40 text-indigo-200 hover:text-white'
+                }`}
+              >
+                <Gamepad2 className="w-4 h-4" />
+                <span>
+                  {isCoopHost
+                    ? `Co-op Active (${players.length})`
+                    : '🎮 Enable Co-op Play'}
+                </span>
+                {pendingRequests.length > 0 && (
+                  <span className="w-4 h-4 rounded-full bg-amber-400 text-black text-[10px] font-bold flex items-center justify-center animate-bounce">
+                    {pendingRequests.length}
+                  </span>
                 )}
-              </>
+              </button>
+            ) : screenSharingParticipant ? (
+              <button
+                type="button"
+                onClick={() => setIsJoinModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow transition cursor-pointer border border-indigo-400/40"
+              >
+                <Gamepad2 className="w-4 h-4" />
+                <span>{mySlot ? `Playing as P${mySlot}` : '🎮 Play Co-op (Join)'}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsScreenShareModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-600/20 hover:bg-indigo-600 border border-indigo-500/30 text-indigo-200 hover:text-white shadow transition cursor-pointer"
+              >
+                <Gamepad2 className="w-4 h-4 text-indigo-300" />
+                <span>🎮 Co-op Remote Play</span>
+              </button>
             )}
 
             {/* Toggle Voice Channel Chat Drawer (Just like Discord!) */}
@@ -225,6 +249,7 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
                   presetTag={currentPresetConfig.tag}
                   onToggleTheater={() => setIsTheater(!isTheater)}
                   isTheater={isTheater}
+                  onOpenJoinModal={() => setIsJoinModalOpen(true)}
                 />
               </div>
 
@@ -401,32 +426,48 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
                   <Sliders className="w-4 h-4" />
                 </button>
 
-                {/* Co-op Remote Play Quick Button (When sharing screen) */}
-                {isScreenSharing && (
-                  <button
-                    onClick={() => {
+                {/* Co-op Remote Play Quick Button (Always Visible in Bottom Dock!) */}
+                <button
+                  onClick={() => {
+                    if (isScreenSharing) {
                       if (!isCoopHost && currentUser) {
                         startHostCoop(currentUser.id);
                       } else {
                         setPanelOpen(!isPanelOpen);
                       }
-                    }}
-                    title="Co-op Remote Play (Virtual Xbox Controllers & Keyboard Injection)"
-                    className={`px-4 h-12 rounded-full flex items-center gap-2 font-bold text-xs transition-all cursor-pointer shadow-lg border ml-1 ${
-                      isCoopHost
-                        ? 'bg-indigo-600 border-indigo-400 text-white shadow-indigo-600/40'
-                        : 'bg-indigo-600/25 hover:bg-indigo-600 border-indigo-500/40 text-indigo-200 hover:text-white'
-                    }`}
-                  >
-                    <Gamepad2 className="w-5 h-5" />
-                    <span>{isCoopHost ? `Co-op (${players.length})` : '🎮 Co-op Play'}</span>
-                    {pendingRequests.length > 0 && (
-                      <span className="w-4 h-4 rounded-full bg-amber-400 text-black text-[10px] font-bold flex items-center justify-center animate-bounce">
-                        {pendingRequests.length}
-                      </span>
-                    )}
-                  </button>
-                )}
+                    } else if (screenSharingParticipant) {
+                      setIsJoinModalOpen(true);
+                    } else {
+                      setIsScreenShareModalOpen(true);
+                    }
+                  }}
+                  title="Co-op Remote Play (Virtual Xbox Controllers & Keyboard Injection)"
+                  className={`px-4 h-12 rounded-full flex items-center gap-2 font-bold text-xs transition-all cursor-pointer shadow-lg border ml-1 ${
+                    isCoopHost || isCoopActive
+                      ? 'bg-gradient-to-r from-indigo-600 to-purple-600 border-indigo-400 text-white shadow-indigo-600/40 animate-pulse'
+                      : isScreenSharing
+                      ? 'bg-indigo-600/40 hover:bg-indigo-600 border-indigo-500/50 text-indigo-100 hover:text-white'
+                      : screenSharingParticipant
+                      ? 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-white shadow-indigo-600/30'
+                      : 'bg-[#2b2d31] hover:bg-indigo-600/40 border-[#383a40] text-discord-gray-200 hover:text-white'
+                  }`}
+                >
+                  <Gamepad2 className="w-5 h-5 text-indigo-300" />
+                  <span>
+                    {isScreenSharing
+                      ? isCoopHost
+                        ? `Co-op Host (${players.length} Players)`
+                        : '🎮 Enable Co-op'
+                      : screenSharingParticipant
+                      ? '🎮 Join Co-op Game'
+                      : '🎮 Co-op Remote Play'}
+                  </span>
+                  {pendingRequests.length > 0 && (
+                    <span className="w-5 h-5 rounded-full bg-amber-400 text-black text-[11px] font-extrabold flex items-center justify-center animate-bounce shadow">
+                      {pendingRequests.length}
+                    </span>
+                  )}
+                </button>
               </div>
 
               {/* Disconnect Voice */}

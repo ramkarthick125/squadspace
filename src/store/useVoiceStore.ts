@@ -124,33 +124,45 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
 
     if (participantLeftUnsub) participantLeftUnsub();
     participantLeftUnsub = webrtcManager.onParticipantLeft((peerId) => {
-      const { activeVoiceChannelId, participantsByChannel } = get();
+      const { activeVoiceChannelId, participantsByChannel, screenShareParticipantId } = get();
       if (!activeVoiceChannelId) return;
 
       const currentList = participantsByChannel[activeVoiceChannelId] || [];
-      set({
+      const newState: any = {
         participantsByChannel: {
           ...participantsByChannel,
           [activeVoiceChannelId]: currentList.filter((p) => p.userId !== peerId),
         },
-      });
+      };
+      if (screenShareParticipantId === peerId) {
+        newState.screenShareParticipantId = null;
+        newState.screenShareStream = null;
+      }
+      set(newState);
       sounds.playLeaveVoice();
     });
 
     if (participantUpdateUnsub) participantUpdateUnsub();
     participantUpdateUnsub = webrtcManager.onParticipantUpdate((peerId, updates) => {
-      const { activeVoiceChannelId, participantsByChannel } = get();
+      const { activeVoiceChannelId, participantsByChannel, screenShareParticipantId } = get();
       if (!activeVoiceChannelId) return;
 
       const currentList = participantsByChannel[activeVoiceChannelId] || [];
-      set({
+      const newState: any = {
         participantsByChannel: {
           ...participantsByChannel,
           [activeVoiceChannelId]: currentList.map((p) =>
             p.userId === peerId ? { ...p, ...updates } : p
           ),
         },
-      });
+      };
+
+      if (updates.isScreenSharing === false && screenShareParticipantId === peerId) {
+        newState.screenShareParticipantId = null;
+        newState.screenShareStream = null;
+      }
+
+      set(newState);
     });
 
     let updated = { ...participantsByChannel };

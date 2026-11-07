@@ -116,6 +116,11 @@ export function formatKeyDisplay(code: string): string {
   if (code === 'AltLeft') return 'Left Alt';
   if (code === 'Backquote') return '` (Tilde)';
   if (code === 'Space') return 'Space';
+  if (code === 'Mouse4') return 'Mouse 4 (Back)';
+  if (code === 'Mouse5') return 'Mouse 5 (Forward)';
+  if (code === 'Mouse3') return 'Middle Click (Mouse 3)';
+  if (code === 'Mouse1') return 'Left Click (Mouse 1)';
+  if (code === 'Mouse2') return 'Right Click (Mouse 2)';
   if (code.startsWith('Key')) return code.slice(3).toUpperCase();
   if (code.startsWith('Digit')) return code.slice(5);
   if (code.startsWith('Numpad')) return 'Num ' + code.slice(6);

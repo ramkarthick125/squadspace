@@ -29,6 +29,7 @@ interface ScreenShareVideoProps {
   presetTag?: string;
   onToggleTheater?: () => void;
   isTheater?: boolean;
+  onOpenJoinModal?: () => void;
 }
 
 export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
@@ -40,6 +41,7 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
   presetTag = '1080p 60FPS',
   onToggleTheater,
   isTheater = false,
+  onOpenJoinModal,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -191,7 +193,7 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
       {/* Top Header Overlay Bar */}
       <div
         className={`absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex items-center justify-between pointer-events-auto transition-opacity duration-300 z-30 ${
-          showControls || isPanelOpen ? 'opacity-100' : 'opacity-0'
+          showControls || isPanelOpen ? 'opacity-100' : 'opacity-90'
         }`}
       >
         <div className="flex items-center gap-2.5">
@@ -260,7 +262,7 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
                     </div>
                   )}
                   <button
-                    onClick={() => setIsJoinModalOpen(true)}
+                    onClick={() => (onOpenJoinModal ? onOpenJoinModal() : setIsJoinModalOpen(true))}
                     className="text-[11px] font-semibold text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 px-2 py-0.5 rounded transition"
                   >
                     Manage
@@ -278,7 +280,7 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
               ) : (
                 <button
                   type="button"
-                  onClick={() => setIsJoinModalOpen(true)}
+                  onClick={() => (onOpenJoinModal ? onOpenJoinModal() : setIsJoinModalOpen(true))}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition cursor-pointer border border-indigo-400/30"
                 >
                   <Gamepad2 className="w-4 h-4" />
@@ -295,21 +297,6 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
           </div>
         </div>
       </div>
-
-      {/* Host Co-op Management Drawer */}
-      {isLocal && isPanelOpen && (
-        <CoopHostPanel onClose={() => setPanelOpen(false)} />
-      )}
-
-      {/* Viewer Co-op Join Modal */}
-      {!isLocal && isJoinModalOpen && currentUser && (
-        <CoopJoinModal
-          hostUserId={sharerUserId || ''}
-          hostName={sharerName}
-          currentUser={currentUser}
-          onClose={() => setIsJoinModalOpen(false)}
-        />
-      )}
 
       {/* Bottom Floating Control Bar */}
       <div

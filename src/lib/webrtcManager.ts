@@ -104,6 +104,10 @@ class WebRTCManager {
   private presenceHeartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private isPttActive: boolean = false;
 
+  // Remote streams separation to prevent duplicate audio / flanging echo
+  private remoteScreenStreamIds: Map<string, string> = new Map();
+  private remoteVoiceStreams: Map<string, MediaStream> = new Map();
+
   // Co-op Remote Play Ultra-Low Latency DataChannels
   private coopDataChannels: Map<string, RTCDataChannel> = new Map();
   private onCoopMessageCallbacks: Set<(peerId: string, packet: any) => void> = new Set();
@@ -288,6 +292,8 @@ class WebRTCManager {
       el.remove();
     });
     this.remoteAudioElements.clear();
+    this.remoteScreenStreamIds.clear();
+    this.remoteVoiceStreams.clear();
 
     this.currentChannelId = null;
     this.currentUser = null;
@@ -478,6 +484,7 @@ class WebRTCManager {
           type: 'screen-start',
           senderId: this.myUserId,
           channelId: this.currentChannelId || '',
+          streamId: this.localScreenStream.id,
           presetKey,
           maxBitrate: preset.maxBitrate,
         });
@@ -533,7 +540,7 @@ class WebRTCManager {
     this.updateAudioTrackState();
   }
 
-  private updateAudioTrackState() {
+  updateAudioTrackState() {
     if (!this.localAudioStream) return;
     const settings = useSettingsStore.getState();
     let enabled = true;
@@ -717,15 +724,30 @@ class WebRTCManager {
       const stream = event.streams[0] || new MediaStream([event.track]);
 
       if (event.track.kind === 'audio') {
-        let audioEl = this.remoteAudioElements.get(peerId);
-        if (!audioEl) {
-          audioEl = new Audio();
-          audioEl.autoplay = true;
-          audioEl.muted = this.isDeafened;
-          this.remoteAudioElements.set(peerId, audioEl);
+        // Prevent double audio / flanging echo:
+        // Screen share audio is played exclusively via ScreenShareVideo with independent volume slider.
+        // Background audioEl is reserved STRICTLY for voice microphone chat.
+        const knownScreenStreamId = this.remoteScreenStreamIds.get(peerId);
+        const isScreenAudio =
+          (knownScreenStreamId && stream.id === knownScreenStreamId) ||
+          stream.getVideoTracks().length > 0 ||
+          event.track.label.toLowerCase().includes('screen') ||
+          event.track.label.toLowerCase().includes('desktop') ||
+          event.track.label.toLowerCase().includes('system') ||
+          (this.remoteVoiceStreams.has(peerId) && this.remoteVoiceStreams.get(peerId)?.id !== stream.id);
+
+        if (!isScreenAudio) {
+          this.remoteVoiceStreams.set(peerId, stream);
+          let audioEl = this.remoteAudioElements.get(peerId);
+          if (!audioEl) {
+            audioEl = new Audio();
+            audioEl.autoplay = true;
+            audioEl.muted = this.isDeafened;
+            this.remoteAudioElements.set(peerId, audioEl);
+          }
+          audioEl.srcObject = stream;
+          audioEl.play().catch(() => {});
         }
-        audioEl.srcObject = stream;
-        audioEl.play().catch(() => {});
       }
 
       this.onRemoteTrackCallbacks.forEach((cb) => cb(peerId, event.track, stream));
@@ -897,6 +919,8 @@ class WebRTCManager {
         this.makingOffer.delete(data.senderId);
         this.ignoreOffer.delete(data.senderId);
         this.screenSenders.delete(data.senderId);
+        this.remoteScreenStreamIds.delete(data.senderId);
+        this.remoteVoiceStreams.delete(data.senderId);
 
         this.onParticipantLeftCallbacks.forEach((cb) => cb(data.senderId));
         break;
@@ -917,6 +941,9 @@ class WebRTCManager {
       }
 
       case 'screen-start': {
+        if (data.streamId) {
+          this.remoteScreenStreamIds.set(data.senderId, data.streamId);
+        }
         if (data.maxBitrate) {
           this.currentScreenBitrate = data.maxBitrate;
         }
@@ -927,6 +954,7 @@ class WebRTCManager {
       }
 
       case 'screen-stop': {
+        this.remoteScreenStreamIds.delete(data.senderId);
         this.onParticipantUpdateCallbacks.forEach((cb) =>
           cb(data.senderId, { isScreenSharing: false })
         );
@@ -939,8 +967,7 @@ class WebRTCManager {
           if (!pc) pc = this.createPeerConnection(data.senderId);
 
           const isPolite = this.myUserId < data.senderId;
-          const offerCollision =
-            this.makingOffer.get(data.senderId) || pc.signalingState !== 'stable';
+          const offerCollision = Boolean(this.makingOffer.get(data.senderId));
 
           this.ignoreOffer.set(data.senderId, !isPolite && offerCollision);
 

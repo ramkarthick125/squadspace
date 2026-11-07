@@ -41,7 +41,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
 
   // Tabs: 'sources' (Applications & Screens) | 'quality' (Resolution & FPS)
   const [activeTab, setActiveTab] = useState<'apps' | 'screens' | 'quality'>(
-    isElectron ? 'apps' : 'quality'
+    isElectron ? 'screens' : 'quality'
   );
 
   // Native Electron Sources
@@ -57,7 +57,8 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
       const list = await window.electronAPI.getScreenSources();
       setSources(list);
       if (list.length > 0 && !selectedSourceId) {
-        setSelectedSourceId(list[0].id);
+        const firstScreen = list.find((s) => s.isScreen);
+        setSelectedSourceId(firstScreen ? firstScreen.id : list[0].id);
       }
     } catch (err) {
       console.warn('Failed to load screen sources:', err);
@@ -202,6 +203,21 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-6 space-y-4 overflow-y-auto flex-1">
+          {/* Alt-Tab & Co-op Pro Tip */}
+          {isElectron && (
+            <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-start gap-2.5 text-xs text-indigo-200">
+              <span className="text-base leading-none mt-0.5">🎮</span>
+              <div>
+                <p>
+                  <strong>Pro Tip for Gaming & Alt-Tabbing:</strong> Select <strong>&quot;Screens&quot; (Entire Screen)</strong> so your game never freezes or stutters when you Alt-Tab away!
+                </p>
+                <p className="text-[11px] text-indigo-300/80 mt-1">
+                  Once live, friends in this voice channel can play along with you using Virtual Xbox Controllers or Keyboard via <strong>Co-op Remote Play</strong>!
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* TAB 1: Applications (Electron Only) */}
           {activeTab === 'apps' && isElectron && (
             <div className="space-y-3">

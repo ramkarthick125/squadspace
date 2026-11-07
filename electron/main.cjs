@@ -23,7 +23,9 @@ app.commandLine.appendSwitch('enable-zero-copy');
 app.commandLine.appendSwitch('force-video-over-gpu');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
-app.commandLine.appendSwitch('enable-features', 'WebRtcHideLocalIpsWithMdns');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,HardwareMediaKeyHandling');
+app.commandLine.appendSwitch('enable-features', 'WebRtcHideLocalIpsWithMdns,RunAllCompositorStagesBeforeDraw,AcceleratedVideoDecode,AcceleratedVideoEncode');
 
 // Register custom protocol for deep linking: squadspace://invite/sqd-xxx
 if (process.defaultApp) {
@@ -55,6 +57,7 @@ function createMainWindow() {
       contextIsolation: true,
       sandbox: false, // Required for desktopCapturer thumbnail access
       webSecurity: true,
+      backgroundThrottling: false, // Prevent frame drops and throttling when Alt-Tabbing or window loses focus
     },
     show: false,
   });
