@@ -35,20 +35,31 @@ type ParticipantUpdateCallback = (userId: string, updates: Partial<VoiceParticip
  * 1. a=playout-delay:0 0 (Chromium low-latency playout extension, eliminates receiver jitter delay)
  * 2. Optimized fmtp bitrate bounds (x-google-min-bitrate & x-google-max-bitrate)
  */
-function injectLowLatencySdp(sdp: string, maxBitrateBps: number = 5_500_000): string {
+function injectLowLatencySdp(sdp: string, maxBitrateBps: number = 12_000_000): string {
   if (!sdp) return sdp;
   const lines = sdp.split('\r\n');
   const result: string[] = [];
   let inVideo = false;
   const maxBitrateKbps = Math.round(maxBitrateBps / 1000);
-  const minBitrateKbps = Math.min(2500, Math.round(maxBitrateKbps / 2));
+  const minBitrateKbps = Math.round(maxBitrateKbps * 0.45);
+  const startBitrateKbps = Math.round(maxBitrateKbps * 0.75);
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (line.startsWith('m=video')) {
       inVideo = true;
+      result.push(line);
+      // Explicitly inject WebRTC bandwidth allocation bounds (b=AS & b=TIAS) into video block
+      result.push(`b=AS:${maxBitrateKbps}`);
+      result.push(`b=TIAS:${maxBitrateBps}`);
+      continue;
     } else if (line.startsWith('m=audio') || line.startsWith('m=application')) {
       inVideo = false;
+    }
+
+    // Skip any existing b=AS or b=TIAS lines inside video block to avoid duplicate overrides
+    if (inVideo && (line.startsWith('b=AS:') || line.startsWith('b=TIAS:'))) {
+      continue;
     }
 
     result.push(line);
@@ -63,7 +74,7 @@ function injectLowLatencySdp(sdp: string, maxBitrateBps: number = 5_500_000): st
     // Enhance fmtp lines with google bitrate constraints
     if (inVideo && line.startsWith('a=fmtp:')) {
       if (!line.includes('x-google-max-bitrate')) {
-        result[result.length - 1] = `${line};x-google-min-bitrate=${minBitrateKbps};x-google-max-bitrate=${maxBitrateKbps};x-google-start-bitrate=${minBitrateKbps}`;
+        result[result.length - 1] = `${line};x-google-min-bitrate=${minBitrateKbps};x-google-max-bitrate=${maxBitrateKbps};x-google-start-bitrate=${startBitrateKbps}`;
       }
     }
   }
@@ -89,6 +100,7 @@ class WebRTCManager {
   private makingOffer: Map<string, boolean> = new Map();
   private ignoreOffer: Map<string, boolean> = new Map();
   private screenSenders: Map<string, RTCRtpSender[]> = new Map();
+  private currentScreenBitrate: number = 12_000_000;
   private presenceHeartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private isPttActive: boolean = false;
 
@@ -294,6 +306,8 @@ class WebRTCManager {
       SCREEN_SHARE_PRESETS['1080p-60'] ||
       SCREEN_SHARE_PRESETS.balanced;
 
+    this.currentScreenBitrate = preset.maxBitrate;
+
     try {
       let stream: MediaStream | null = null;
 
@@ -405,6 +419,34 @@ class WebRTCManager {
           const vSender = pc.addTrack(videoTrack, this.localScreenStream!);
           addedSenders.push(vSender);
 
+          // 1. Force hardware GPU H.264 High Profile / VP9 codec preferences on the new video transceiver
+          try {
+            const transceivers = pc.getTransceivers();
+            const videoTransceiver = transceivers.find((t) => t.sender === vSender);
+            if (videoTransceiver && 'setCodecPreferences' in videoTransceiver && 'getCapabilities' in RTCRtpSender) {
+              const capabilities = RTCRtpSender.getCapabilities('video');
+              if (capabilities && capabilities.codecs) {
+                // Prioritize H.264 High Profile (NVENC / QuickSync / AMF GPU hardware acceleration)
+                const h264High = capabilities.codecs.filter((c) =>
+                  c.mimeType.toLowerCase() === 'video/h264' &&
+                  c.sdpFmtpLine?.includes('profile-level-id=6400')
+                );
+                const h264Other = capabilities.codecs.filter((c) =>
+                  c.mimeType.toLowerCase() === 'video/h264' &&
+                  !c.sdpFmtpLine?.includes('profile-level-id=6400')
+                );
+                const vp9 = capabilities.codecs.filter((c) => c.mimeType.toLowerCase() === 'video/vp9');
+                const rest = capabilities.codecs.filter((c) =>
+                  c.mimeType.toLowerCase() !== 'video/h264' && c.mimeType.toLowerCase() !== 'video/vp9'
+                );
+                videoTransceiver.setCodecPreferences([...h264High, ...h264Other, ...vp9, ...rest]);
+              }
+            }
+          } catch (codecErr) {
+            console.warn('Could not set transceiver codec preferences:', codecErr);
+          }
+
+          // 2. Configure RTCRtpEncodingParameters with high bitrate and maintain-resolution
           if (vSender && vSender.getParameters) {
             try {
               const params = vSender.getParameters();
@@ -412,8 +454,13 @@ class WebRTCManager {
                 params.encodings = [{}];
               }
               params.encodings[0].maxBitrate = preset.maxBitrate;
+              (params.encodings[0] as any).minBitrate = Math.round(preset.maxBitrate * 0.45);
               params.encodings[0].maxFramerate = preset.frameRate;
-              (params as any).degradationPreference = 'maintain-framerate';
+              params.encodings[0].scaleResolutionDownBy = 1.0;
+              params.encodings[0].priority = 'high';
+              params.encodings[0].networkPriority = 'high';
+              // CRITICAL: maintain-resolution guarantees the encoder NEVER drops resolution (prevents 1080p -> 360p downscaling)
+              (params as any).degradationPreference = 'maintain-resolution';
               vSender.setParameters(params).catch(() => {});
             } catch {}
           }
@@ -432,6 +479,7 @@ class WebRTCManager {
           senderId: this.myUserId,
           channelId: this.currentChannelId || '',
           presetKey,
+          maxBitrate: preset.maxBitrate,
         });
       }
 
@@ -757,7 +805,7 @@ class WebRTCManager {
       const offer = await pc.createOffer();
       if (pc.signalingState !== 'stable') return;
 
-      const optimizedSdp = injectLowLatencySdp(offer.sdp || '', maxBitrate);
+      const optimizedSdp = injectLowLatencySdp(offer.sdp || '', maxBitrate || this.currentScreenBitrate);
       await pc.setLocalDescription({ type: offer.type, sdp: optimizedSdp });
 
       this.sendSignal({
@@ -869,6 +917,9 @@ class WebRTCManager {
       }
 
       case 'screen-start': {
+        if (data.maxBitrate) {
+          this.currentScreenBitrate = data.maxBitrate;
+        }
         this.onParticipantUpdateCallbacks.forEach((cb) =>
           cb(data.senderId, { isScreenSharing: true })
         );
@@ -916,7 +967,7 @@ class WebRTCManager {
             }
 
             const answer = await pc.createAnswer();
-            const optimizedAnswerSdp = injectLowLatencySdp(answer.sdp || '');
+            const optimizedAnswerSdp = injectLowLatencySdp(answer.sdp || '', this.currentScreenBitrate);
             await pc.setLocalDescription({ type: answer.type, sdp: optimizedAnswerSdp });
 
             this.sendSignal({

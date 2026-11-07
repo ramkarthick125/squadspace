@@ -44,7 +44,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   activeVoiceChannelId: null,
   connectionState: 'disconnected',
   engineMode: 'p2p', // 100% Free direct P2P mesh by default
-  streamQuality: 'balanced',
+  streamQuality: '1080p-60', // 1080p @ 60 FPS 12 Mbps default
   isMuted: false,
   isDeafened: false,
   isScreenSharing: false,
