@@ -35,4 +35,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('deeplink:navigate', handler);
     return () => ipcRenderer.removeListener('deeplink:navigate', handler);
   },
+
+  // Co-op Remote Play (Parsec-style Virtual Xbox 360 & Keyboard/Mouse injection)
+  coopGetDriverStatus: () => ipcRenderer.invoke('coop:get-driver-status'),
+  coopSlotConnect: (slot, inputMode) => ipcRenderer.invoke('coop:slot-connect', slot, inputMode),
+  coopSlotDisconnect: (slot) => ipcRenderer.invoke('coop:slot-disconnect', slot),
+  coopSetPause: (slot, isPaused) => ipcRenderer.invoke('coop:set-pause', slot, isPaused),
+  coopSetMode: (slot, inputMode) => ipcRenderer.invoke('coop:set-mode', slot, inputMode),
+  coopInjectGamepad: (slot, data) => ipcRenderer.send('coop:inject-gamepad', slot, data),
+  coopInjectKeyboard: (slot, data) => ipcRenderer.send('coop:inject-keyboard', slot, data),
+  coopInjectMouse: (slot, data) => ipcRenderer.send('coop:inject-mouse', slot, data),
+  coopPanicDisconnectAll: () => ipcRenderer.invoke('coop:panic-disconnect-all'),
+  onCoopPanic: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('coop:panic-triggered', handler);
+    return () => ipcRenderer.removeListener('coop:panic-triggered', handler);
+  },
 });

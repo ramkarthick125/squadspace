@@ -8,11 +8,23 @@ import {
   Tv,
   PictureInPicture,
   Sparkles,
+  Gamepad2,
+  Keyboard,
+  Loader2,
+  Users,
 } from 'lucide-react';
+import { UserProfile } from '../../types';
+import { useCoopStore } from '../../store/useCoopStore';
+import { coopClient } from '../../lib/coopClient';
+import { CoopHostPanel } from './CoopHostPanel';
+import { CoopJoinModal } from './CoopJoinModal';
+import { GamepadVisualizer } from './GamepadVisualizer';
 
 interface ScreenShareVideoProps {
   stream: MediaStream | null;
   sharerName: string;
+  sharerUserId?: string;
+  currentUser?: UserProfile | null;
   isLocal?: boolean;
   presetTag?: string;
   onToggleTheater?: () => void;
@@ -22,6 +34,8 @@ interface ScreenShareVideoProps {
 export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
   stream,
   sharerName,
+  sharerUserId,
+  currentUser,
   isLocal = false,
   presetTag = '1080p 60FPS',
   onToggleTheater,
@@ -35,6 +49,27 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
   const [isMuted, setIsMuted] = useState<boolean>(isLocal);
   const [showControls, setShowControls] = useState<boolean>(true);
   const [controlsTimeout, setControlsTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
+  const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
+
+  const {
+    isCoopHost,
+    isCoopActive,
+    players,
+    pendingRequests,
+    mySlot,
+    myInputMode,
+    isRequested,
+    isPanelOpen,
+    startHostCoop,
+    setPanelOpen,
+    cancelJoinRequest,
+    init,
+  } = useCoopStore();
+
+  // Initialize Co-op listeners and driver detection
+  useEffect(() => {
+    init();
+  }, [init]);
 
   // Attach stream to video element with ultra-low latency settings
   useEffect(() => {
@@ -54,6 +89,16 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
     }
   }, [volume, isMuted, isLocal]);
 
+  // Keyboard & Mouse capture for remote player in keyboard mode
+  useEffect(() => {
+    if (mySlot && myInputMode === 'keyboard_mouse' && containerRef.current && !isLocal) {
+      coopClient.attachKeyboardMouse(containerRef.current);
+      return () => {
+        coopClient.detachKeyboardMouse();
+      };
+    }
+  }, [mySlot, myInputMode, isLocal]);
+
   // Fullscreen change listener on document
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -66,17 +111,19 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
     };
   }, []);
 
-  // Controls auto-hide on inactivity
+  // Controls auto-hide on inactivity (never hide if panel is open)
   const handleMouseMove = useCallback(() => {
     setShowControls(true);
     if (controlsTimeout) clearTimeout(controlsTimeout);
     const timeout = setTimeout(() => {
-      setShowControls(false);
-    }, 3000);
+      if (!isPanelOpen && !isJoinModalOpen) {
+        setShowControls(false);
+      }
+    }, 4000);
     setControlsTimeout(timeout);
-  }, [controlsTimeout]);
+  }, [controlsTimeout, isPanelOpen, isJoinModalOpen]);
 
-  // Toggle Fullscreen on Container (Never on <video> directly to avoid browser scrub bars!)
+  // Toggle Fullscreen on Container
   const handleToggleFullscreen = () => {
     if (!containerRef.current) return;
     if (!document.fullscreenElement) {
@@ -114,12 +161,20 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
     );
   }
 
+  const myPlayer = players.find((p) => p.slot === mySlot);
+  const isPlaying = mySlot !== null;
+
   return (
     <div
       ref={containerRef}
       onMouseMove={handleMouseMove}
-      onMouseLeave={() => setShowControls(false)}
-      className="relative w-full h-full bg-[#0e1013] rounded-2xl overflow-hidden group select-none flex items-center justify-center border border-[#1e1f22] shadow-2xl"
+      onMouseLeave={() => {
+        if (!isPanelOpen && !isJoinModalOpen) {
+          setShowControls(false);
+        }
+      }}
+      tabIndex={0}
+      className="relative w-full h-full bg-[#0e1013] rounded-2xl overflow-hidden group select-none flex items-center justify-center border border-[#1e1f22] shadow-2xl focus:outline-none"
     >
       {/* Video Element without native controls */}
       <video
@@ -135,8 +190,8 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
 
       {/* Top Header Overlay Bar */}
       <div
-        className={`absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/80 via-black/40 to-transparent flex items-center justify-between pointer-events-auto transition-opacity duration-300 ${
-          showControls ? 'opacity-100' : 'opacity-0'
+        className={`absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex items-center justify-between pointer-events-auto transition-opacity duration-300 z-30 ${
+          showControls || isPanelOpen ? 'opacity-100' : 'opacity-0'
         }`}
       >
         <div className="flex items-center gap-2.5">
@@ -153,23 +208,112 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
 
           {/* Sharer Name */}
           <div className="text-xs font-bold text-discord-gray-100 hidden sm:flex items-center gap-1.5 drop-shadow">
-            <span>{sharerName}'s Screen</span>
+            <span>{sharerName}&apos;s Screen</span>
             {isLocal && (
               <span className="text-[10px] text-discord-gray-400 font-normal">(You)</span>
             )}
           </div>
         </div>
 
-        {/* P2P WebRTC Direct Tag */}
-        <div className="text-[10px] font-semibold text-discord-green bg-discord-green/15 border border-discord-green/30 px-2.5 py-1 rounded-full flex items-center gap-1.5 backdrop-blur-md">
-          <Sparkles className="w-3 h-3" />
-          <span>Direct P2P Stream</span>
+        {/* Co-op Remote Play Center Action */}
+        <div className="flex items-center gap-2">
+          {isLocal ? (
+            /* Host Controls */
+            <button
+              type="button"
+              onClick={() => {
+                if (!isCoopHost && currentUser) {
+                  startHostCoop(currentUser.id);
+                } else {
+                  setPanelOpen(!isPanelOpen);
+                }
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs shadow-lg transition cursor-pointer border ${
+                isCoopHost
+                  ? 'bg-indigo-600 border-indigo-400 text-white shadow-indigo-600/40'
+                  : 'bg-indigo-600/30 hover:bg-indigo-600 border-indigo-500/40 text-indigo-200 hover:text-white'
+              }`}
+            >
+              <Gamepad2 className="w-4 h-4" />
+              <span>
+                {isCoopHost
+                  ? `Co-op Active (${players.length} Players)`
+                  : '🎮 Enable Co-op Play'}
+              </span>
+              {pendingRequests.length > 0 && (
+                <span className="w-4 h-4 rounded-full bg-amber-400 text-black text-[10px] font-bold flex items-center justify-center animate-bounce">
+                  {pendingRequests.length}
+                </span>
+              )}
+            </button>
+          ) : (
+            /* Viewer Controls */
+            <div className="flex items-center gap-2">
+              {isPlaying ? (
+                <div className="flex items-center gap-2 bg-black/80 backdrop-blur-md border border-emerald-500/40 px-3 py-1 rounded-xl">
+                  {myInputMode === 'gamepad' ? (
+                    <GamepadVisualizer slot={mySlot!} isPaused={myPlayer?.isPaused} />
+                  ) : (
+                    <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold">
+                      <Keyboard className="w-4 h-4" />
+                      <span>Keyboard Active (P{mySlot})</span>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => setIsJoinModalOpen(true)}
+                    className="text-[11px] font-semibold text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 px-2 py-0.5 rounded transition"
+                  >
+                    Manage
+                  </button>
+                </div>
+              ) : isRequested ? (
+                <button
+                  type="button"
+                  onClick={cancelJoinRequest}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-pointer animate-pulse"
+                >
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Request Sent (Cancel)</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsJoinModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition cursor-pointer border border-indigo-400/30"
+                >
+                  <Gamepad2 className="w-4 h-4" />
+                  <span>🎮 Join Game (Co-op)</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* P2P WebRTC Direct Tag */}
+          <div className="text-[10px] font-semibold text-discord-green bg-discord-green/15 border border-discord-green/30 px-2.5 py-1 rounded-full flex items-center gap-1.5 backdrop-blur-md hidden sm:flex">
+            <Sparkles className="w-3 h-3" />
+            <span>Direct P2P</span>
+          </div>
         </div>
       </div>
 
+      {/* Host Co-op Management Drawer */}
+      {isLocal && isPanelOpen && (
+        <CoopHostPanel onClose={() => setPanelOpen(false)} />
+      )}
+
+      {/* Viewer Co-op Join Modal */}
+      {!isLocal && isJoinModalOpen && currentUser && (
+        <CoopJoinModal
+          hostUserId={sharerUserId || ''}
+          hostName={sharerName}
+          currentUser={currentUser}
+          onClose={() => setIsJoinModalOpen(false)}
+        />
+      )}
+
       {/* Bottom Floating Control Bar */}
       <div
-        className={`absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/85 via-black/50 to-transparent flex items-center justify-between pointer-events-auto transition-opacity duration-300 ${
+        className={`absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/85 via-black/50 to-transparent flex items-center justify-between pointer-events-auto transition-opacity duration-300 z-20 ${
           showControls ? 'opacity-100' : 'opacity-0'
         }`}
       >
@@ -211,6 +355,13 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
           {isLocal && (
             <span className="text-[11px] text-discord-gray-300 bg-black/60 px-2.5 py-1 rounded-lg backdrop-blur-md border border-white/10">
               Broadcasting your screen
+            </span>
+          )}
+
+          {/* Keyboard & Mouse Guide Hint for Player */}
+          {isPlaying && myInputMode === 'keyboard_mouse' && !isLocal && (
+            <span className="text-[11px] text-emerald-300 bg-emerald-950/80 border border-emerald-500/30 px-2.5 py-1 rounded-lg backdrop-blur-md animate-pulse">
+              Click screen to send keyboard & mouse to game
             </span>
           )}
         </div>

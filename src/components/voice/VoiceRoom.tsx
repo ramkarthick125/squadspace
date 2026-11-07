@@ -152,6 +152,8 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
                 <ScreenShareVideo
                   stream={screenShareStream}
                   sharerName={screenSharingParticipant.user.displayName}
+                  sharerUserId={screenSharingParticipant.userId}
+                  currentUser={currentUser}
                   isLocal={screenSharingParticipant.userId === currentUser?.id}
                   presetTag={currentPresetConfig.tag}
                   onToggleTheater={() => setIsTheater(!isTheater)}

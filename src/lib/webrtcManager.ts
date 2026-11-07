@@ -92,6 +92,10 @@ class WebRTCManager {
   private presenceHeartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private isPttActive: boolean = false;
 
+  // Co-op Remote Play Ultra-Low Latency DataChannels
+  private coopDataChannels: Map<string, RTCDataChannel> = new Map();
+  private onCoopMessageCallbacks: Set<(peerId: string, packet: any) => void> = new Set();
+
   private currentUser: UserProfile | null = null;
   private myUserId: string = '';
   private currentChannelId: string | null = null;
@@ -257,6 +261,14 @@ class WebRTCManager {
     this.makingOffer.clear();
     this.ignoreOffer.clear();
     this.screenSenders.clear();
+
+    // Close Co-op data channels
+    this.coopDataChannels.forEach((dc) => {
+      try {
+        dc.close();
+      } catch {}
+    });
+    this.coopDataChannels.clear();
 
     // Remove remote audio elements
     this.remoteAudioElements.forEach((el) => {
@@ -646,8 +658,48 @@ class WebRTCManager {
       }
     } catch {}
 
+    // Setup Co-op low-latency DataChannel (unreliable & unordered for UDP gaming input speed)
+    if (this.myUserId < peerId) {
+      try {
+        const dc = pc.createDataChannel('squadspace-coop-input', {
+          ordered: false,
+          maxRetransmits: 0,
+        });
+        this.setupCoopDataChannel(peerId, dc);
+      } catch (err) {
+        console.warn('Failed to create coop data channel:', err);
+      }
+    }
+
+    pc.ondatachannel = (event) => {
+      if (event.channel && event.channel.label === 'squadspace-coop-input') {
+        this.setupCoopDataChannel(peerId, event.channel);
+      }
+    };
+
     this.peers.set(peerId, pc);
     return pc;
+  }
+
+  private setupCoopDataChannel(peerId: string, dc: RTCDataChannel) {
+    dc.binaryType = 'arraybuffer';
+    dc.onopen = () => {
+      console.log(`[WebRTC] Co-op DataChannel open with peer: ${peerId}`);
+      this.coopDataChannels.set(peerId, dc);
+    };
+    dc.onclose = () => {
+      console.log(`[WebRTC] Co-op DataChannel closed with peer: ${peerId}`);
+      this.coopDataChannels.delete(peerId);
+    };
+    dc.onerror = (err) => {
+      console.warn(`[WebRTC] Co-op DataChannel error with peer ${peerId}:`, err);
+    };
+    dc.onmessage = (event) => {
+      try {
+        const packet = JSON.parse(event.data);
+        this.onCoopMessageCallbacks.forEach((cb) => cb(peerId, packet));
+      } catch {}
+    };
   }
 
   private async createAndSendOffer(peerId: string, maxBitrate?: number) {
@@ -737,12 +789,27 @@ class WebRTCManager {
           this.remoteAudioElements.delete(data.senderId);
         }
 
+        const coopDc = this.coopDataChannels.get(data.senderId);
+        if (coopDc) {
+          try {
+            coopDc.close();
+          } catch {}
+          this.coopDataChannels.delete(data.senderId);
+        }
+
         this.pendingCandidates.delete(data.senderId);
         this.makingOffer.delete(data.senderId);
         this.ignoreOffer.delete(data.senderId);
         this.screenSenders.delete(data.senderId);
 
         this.onParticipantLeftCallbacks.forEach((cb) => cb(data.senderId));
+        break;
+      }
+
+      case 'coop-control': {
+        if (!data.targetId || data.targetId === this.myUserId) {
+          this.onCoopMessageCallbacks.forEach((cb) => cb(data.senderId, data.payload));
+        }
         break;
       }
 
@@ -879,6 +946,70 @@ class WebRTCManager {
         });
       } catch {}
     }
+  }
+
+  // --------------------------------------------------------------------------
+  // Co-op Remote Play API
+  // --------------------------------------------------------------------------
+
+  /**
+   * Send Co-op Control message (Join request, approval, player sync, pause, kick)
+   */
+  public sendCoopControl(targetId: string | null, payload: any): boolean {
+    let sentViaDataChannel = false;
+    if (targetId) {
+      const dc = this.coopDataChannels.get(targetId);
+      if (dc && dc.readyState === 'open') {
+        try {
+          dc.send(JSON.stringify(payload));
+          sentViaDataChannel = true;
+        } catch {}
+      }
+    }
+
+    // Also send via signaling channel for guaranteed delivery
+    this.sendSignal({
+      type: 'coop-control',
+      targetId: targetId || undefined,
+      senderId: this.myUserId,
+      channelId: this.currentChannelId || '',
+      payload,
+    });
+
+    return sentViaDataChannel;
+  }
+
+  /**
+   * Send high-frequency Co-op Input packet (Gamepad axes/buttons or Keyboard/Mouse)
+   * Directly through WebRTC DataChannel (zero server latency)
+   */
+  public sendCoopInput(targetId: string, packet: any): boolean {
+    const dc = this.coopDataChannels.get(targetId);
+    if (dc && dc.readyState === 'open') {
+      try {
+        dc.send(JSON.stringify(packet));
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Register listener for incoming Co-op messages and inputs
+   */
+  public onCoopMessage(callback: (peerId: string, packet: any) => void): () => void {
+    this.onCoopMessageCallbacks.add(callback);
+    return () => this.onCoopMessageCallbacks.delete(callback);
+  }
+
+  /**
+   * Check if Co-op DataChannel is ready with a peer
+   */
+  public isCoopChannelReady(peerId: string): boolean {
+    const dc = this.coopDataChannels.get(peerId);
+    return Boolean(dc && dc.readyState === 'open');
   }
 }
 

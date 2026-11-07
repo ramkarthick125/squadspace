@@ -28,11 +28,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -65,11 +69,13 @@
     "@supabase/supabase-js": "^2.119.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "koffi": "^3.3.7",
     "livekit-client": "^2.23.0",
     "lucide-react": "^1.69.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.5",
+    "vigemclient": "^1.5.3",
     "zustand": "^5.0.16"
   }
 }

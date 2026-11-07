@@ -11,6 +11,7 @@ const {
   shell,
 } = require('electron');
 const path = require('path');
+const coopHost = require('./coopHost.cjs');
 
 // Live Hosted Deployment URL (Discord-style remote auto-updating shell)
 const REMOTE_APP_URL = process.env.SQUADSPACE_REMOTE_URL || 'https://squadspace-flame.vercel.app';
@@ -216,6 +217,14 @@ function registerGlobalShortcuts() {
       mainWindow.webContents.send('hotkey:toggle-deafen');
     }
   });
+
+  // Global Co-op Remote Play Panic Disconnect (Instantly severs all remote inputs)
+  globalShortcut.register('CommandOrControl+Shift+P', () => {
+    coopHost.panicDisconnectAll();
+    if (mainWindow) {
+      mainWindow.webContents.send('coop:panic-triggered');
+    }
+  });
 }
 
 // ----------------------------------------------------------------------------
@@ -268,6 +277,47 @@ ipcMain.handle('screen:get-sources', async () => {
   }
 });
 
+// 3. Co-Op Remote Play IPC Handlers (ViGEm Virtual Xbox 360 & Keyboard/Mouse)
+ipcMain.handle('coop:get-driver-status', () => {
+  return coopHost.getDriverStatus();
+});
+
+ipcMain.handle('coop:slot-connect', (_event, slot, inputMode) => {
+  return coopHost.connectSlot(slot, inputMode);
+});
+
+ipcMain.handle('coop:slot-disconnect', (_event, slot) => {
+  coopHost.slotDisconnect(slot);
+  return true;
+});
+
+ipcMain.handle('coop:set-pause', (_event, slot, isPaused) => {
+  coopHost.setSlotPause(slot, isPaused);
+  return true;
+});
+
+ipcMain.handle('coop:set-mode', (_event, slot, inputMode) => {
+  coopHost.setSlotMode(slot, inputMode);
+  return true;
+});
+
+ipcMain.on('coop:inject-gamepad', (_event, slot, data) => {
+  coopHost.injectGamepad(slot, data);
+});
+
+ipcMain.on('coop:inject-keyboard', (_event, slot, data) => {
+  coopHost.injectKeyboard(slot, data);
+});
+
+ipcMain.on('coop:inject-mouse', (_event, slot, data) => {
+  coopHost.injectMouse(slot, data);
+});
+
+ipcMain.handle('coop:panic-disconnect-all', () => {
+  coopHost.panicDisconnectAll();
+  return true;
+});
+
 // Single Instance Lock
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -300,5 +350,6 @@ if (!gotTheLock) {
 }
 
 app.on('will-quit', () => {
+  coopHost.panicDisconnectAll();
   globalShortcut.unregisterAll();
 });

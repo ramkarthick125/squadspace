@@ -140,6 +140,18 @@ export interface ElectronAPI {
   onToggleMute: (callback: () => void) => () => void;
   onToggleDeafen: (callback: () => void) => () => void;
   onDeepLink: (callback: (url: string) => void) => () => void;
+
+  // Co-op Remote Play
+  coopGetDriverStatus?: () => Promise<{ vigemAvailable: boolean; vigemInitError: string | null; user32Available: boolean }>;
+  coopSlotConnect?: (slot: number, inputMode: string) => Promise<{ success: boolean; error?: string }>;
+  coopSlotDisconnect?: (slot: number) => Promise<boolean>;
+  coopSetPause?: (slot: number, isPaused: boolean) => Promise<boolean>;
+  coopSetMode?: (slot: number, inputMode: string) => Promise<boolean>;
+  coopInjectGamepad?: (slot: number, data: any) => void;
+  coopInjectKeyboard?: (slot: number, data: any) => void;
+  coopInjectMouse?: (slot: number, data: any) => void;
+  coopPanicDisconnectAll?: () => Promise<boolean>;
+  onCoopPanic?: (callback: () => void) => () => void;
 }
 
 declare global {
