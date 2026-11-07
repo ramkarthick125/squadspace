@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Mic, MicOff, Headphones, Settings, Circle, Radio } from 'lucide-react';
+import { Mic, MicOff, Headphones, Settings, Circle, Radio, LogOut, Key } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
+import { authService } from '../../lib/authService';
 import { useVoiceStore } from '../../store/useVoiceStore';
 import { useSettingsStore, formatKeyDisplay } from '../../store/useSettingsStore';
 import { UserStatus } from '../../types';
@@ -115,6 +116,19 @@ export const UserBottomBar: React.FC<UserBottomBarProps> = ({ onOpenSettings }) 
         >
           <Settings className="w-5 h-5" />
         </button>
+
+        <button
+          onClick={async () => {
+            if (window.confirm('Log out of SquadSpace?')) {
+              await authService.logout(currentUser.id);
+              useAuthStore.getState().logout();
+            }
+          }}
+          title="Log Out of SquadSpace"
+          className="p-1.5 rounded hover:bg-discord-red/20 text-discord-gray-400 hover:text-discord-red transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Status Selection Popup */}
@@ -124,7 +138,7 @@ export const UserBottomBar: React.FC<UserBottomBarProps> = ({ onOpenSettings }) 
             className="fixed inset-0 z-30"
             onClick={() => setShowStatusMenu(false)}
           />
-          <div className="absolute bottom-14 left-2 w-48 bg-[#111214] border border-[#2b2d31] rounded-lg shadow-2xl p-1.5 z-40 text-sm">
+          <div className="absolute bottom-14 left-2 w-52 bg-[#111214] border border-[#2b2d31] rounded-lg shadow-2xl p-1.5 z-40 text-sm">
             <div className="text-xs font-bold text-discord-gray-400 uppercase px-2 py-1">
               Set Status
             </div>
@@ -150,6 +164,30 @@ export const UserBottomBar: React.FC<UserBottomBarProps> = ({ onOpenSettings }) 
               className="w-full text-left px-2 py-1.5 rounded hover:bg-discord-hover text-discord-gray-300 text-xs"
             >
               Edit Custom Status & Activity...
+            </button>
+            <button
+              onClick={() => {
+                setShowStatusMenu(false);
+                onOpenSettings();
+              }}
+              className="w-full text-left px-2 py-1.5 rounded hover:bg-discord-hover text-discord-blurple-light text-xs flex items-center gap-2"
+            >
+              <Key className="w-3.5 h-3.5 text-amber-400" />
+              <span>Reset / Change Password...</span>
+            </button>
+            <div className="my-1 border-t border-discord-divider" />
+            <button
+              onClick={async () => {
+                setShowStatusMenu(false);
+                if (window.confirm('Log out of SquadSpace?')) {
+                  await authService.logout(currentUser.id);
+                  useAuthStore.getState().logout();
+                }
+              }}
+              className="w-full text-left px-2 py-1.5 rounded hover:bg-discord-red/20 text-discord-red text-xs flex items-center gap-2"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Log Out</span>
             </button>
           </div>
         </>

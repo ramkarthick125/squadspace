@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Gamepad2, User, Lock, Sparkles, ShieldCheck, LogOut, Mic, Volume2, Keyboard, RotateCcw, Radio } from 'lucide-react';
+import { X, Gamepad2, User, Lock, Sparkles, ShieldCheck, LogOut, Mic, Volume2, Keyboard, RotateCcw, Radio, Key } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { authService } from '../../lib/authService';
 import { useSettingsStore, formatKeyDisplay, KeybindConfig } from '../../store/useSettingsStore';
@@ -30,6 +30,62 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
   const [activeTab, setActiveTab] = useState<'profile' | 'activity' | 'voice' | 'keybinds' | 'security'>('profile');
   const [savedNotification, setSavedNotification] = useState(false);
   const [recordingKeybindFor, setRecordingKeybindFor] = useState<keyof KeybindConfig | null>(null);
+
+  // Security & Password Reset States
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [passwordStatusMsg, setPasswordStatusMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+  const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
+
+  const handleUpdatePassword = async () => {
+    setPasswordStatusMsg(null);
+    if (newPasswordInput.length < 6) {
+      setPasswordStatusMsg({ text: 'New password must be at least 6 characters long.', type: 'error' });
+      return;
+    }
+    if (newPasswordInput !== confirmPasswordInput) {
+      setPasswordStatusMsg({ text: 'Passwords do not match.', type: 'error' });
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    try {
+      const res = await authService.changePassword(newPasswordInput);
+      if (res.success) {
+        setPasswordStatusMsg({ text: 'Password successfully updated!', type: 'success' });
+        setNewPasswordInput('');
+        setConfirmPasswordInput('');
+      } else {
+        setPasswordStatusMsg({ text: res.error || 'Failed to update password.', type: 'error' });
+      }
+    } catch (err: any) {
+      setPasswordStatusMsg({ text: err.message || 'Error updating password.', type: 'error' });
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
+
+  const handleSendResetEmail = async () => {
+    if (!currentUser) return;
+    setPasswordStatusMsg(null);
+    setIsSendingResetEmail(true);
+    try {
+      const res = await authService.requestPasswordReset(currentUser.username);
+      if (res.success) {
+        setPasswordStatusMsg({
+          text: `Password reset instructions sent to ${res.email || 'your registered email'}! Please check your inbox.`,
+          type: 'success',
+        });
+      } else {
+        setPasswordStatusMsg({ text: res.error || 'Failed to send reset email.', type: 'error' });
+      }
+    } catch (err: any) {
+      setPasswordStatusMsg({ text: err.message || 'Error sending reset email.', type: 'error' });
+    } finally {
+      setIsSendingResetEmail(false);
+    }
+  };
 
   // Key recording listener
   useEffect(() => {
@@ -698,37 +754,95 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
             )}
 
             {activeTab === 'security' && (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <div className="p-3 bg-discord-sidebar rounded-lg border border-discord-darkest">
                   <div className="flex items-center gap-2 text-discord-green text-sm font-bold mb-1">
                     <ShieldCheck className="w-5 h-5" />
                     <span>Supabase Authentication Active</span>
                   </div>
                   <p className="text-xs text-discord-gray-400">
-                    Your password and tokens are securely encrypted via Supabase Auth with Row-Level Security.
+                    Your account is secured with Supabase Auth cryptographic hashing and Row-Level Security.
                   </p>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-discord-gray-300 uppercase tracking-wider mb-2">
-                    Current Password
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="••••••••••••"
-                    className="w-full bg-discord-input text-discord-gray-100 rounded p-2 text-sm focus:outline-none"
-                  />
+                {passwordStatusMsg && (
+                  <div
+                    className={`p-3 rounded-lg text-xs flex items-center gap-2 ${
+                      passwordStatusMsg.type === 'success'
+                        ? 'bg-discord-green/10 border border-discord-green/30 text-discord-green'
+                        : 'bg-discord-red/10 border border-discord-red/30 text-discord-red'
+                    }`}
+                  >
+                    <span>{passwordStatusMsg.text}</span>
+                  </div>
+                )}
+
+                {/* Section 1: Change Password */}
+                <div className="bg-discord-sidebar/60 p-4 rounded-xl border border-discord-darkest space-y-3">
+                  <h3 className="text-xs font-bold text-discord-gray-200 uppercase tracking-wider">
+                    Change Password
+                  </h3>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-discord-gray-300 mb-1">
+                      New Password (min 6 characters)
+                    </label>
+                    <input
+                      type="password"
+                      value={newPasswordInput}
+                      onChange={(e) => setNewPasswordInput(e.target.value)}
+                      placeholder="Enter new strong password"
+                      className="w-full bg-discord-input text-discord-gray-100 rounded-lg p-2.5 text-sm border border-transparent focus:border-discord-blurple focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-discord-gray-300 mb-1">
+                      Confirm New Password
+                    </label>
+                    <input
+                      type="password"
+                      value={confirmPasswordInput}
+                      onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                      placeholder="Re-enter new password"
+                      className="w-full bg-discord-input text-discord-gray-100 rounded-lg p-2.5 text-sm border border-transparent focus:border-discord-blurple focus:outline-none"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={isUpdatingPassword || !newPasswordInput}
+                    onClick={handleUpdatePassword}
+                    className="px-4 py-2 bg-discord-blurple hover:bg-discord-blurple-hover active:bg-discord-blurple-hover/90 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer"
+                  >
+                    {isUpdatingPassword ? 'Updating Password...' : 'Save New Password'}
+                  </button>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-discord-gray-300 uppercase tracking-wider mb-2">
-                    New Password
-                  </label>
-                  <input
-                    type="password"
-                    placeholder="Enter new strong password"
-                    className="w-full bg-discord-input text-discord-gray-100 rounded p-2 text-sm focus:outline-none"
-                  />
+                {/* Section 2: Forgot Password / Email Recovery */}
+                <div className="bg-amber-500/10 p-4 rounded-xl border border-amber-500/30 space-y-2">
+                  <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wide">
+                    <Key className="w-4 h-4" />
+                    <span>Forgot Your Password?</span>
+                  </div>
+                  <p className="text-xs text-discord-gray-300">
+                    Lost or forgot your password? Click below to send a password reset magic link and 6-digit recovery code directly to your registered email address.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={isSendingResetEmail}
+                    onClick={handleSendResetEmail}
+                    className="mt-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 disabled:opacity-50 text-black font-bold rounded-lg text-xs transition-all shadow-sm flex items-center gap-2 cursor-pointer"
+                  >
+                    {isSendingResetEmail ? (
+                      <span>Sending Reset Instructions...</span>
+                    ) : (
+                      <>
+                        <Key className="w-3.5 h-3.5" />
+                        <span>Send Password Reset Email</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             )}
