@@ -13,13 +13,17 @@ import {
   Minimize2,
   Sliders,
   Tv,
+  Gamepad2,
 } from 'lucide-react';
 import { Channel, UserProfile } from '../../types';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useVoiceStore } from '../../store/useVoiceStore';
+import { useCoopStore } from '../../store/useCoopStore';
 import { SCREEN_SHARE_PRESETS, ScreenSharePreset } from '../../lib/livekit';
 import { ScreenShareVideo } from './ScreenShareVideo';
 import { ScreenShareModal } from '../modals/ScreenShareModal';
+import { CoopHostPanel } from './CoopHostPanel';
+import { CoopJoinModal } from './CoopJoinModal';
 import { ChatArea } from '../chat/ChatArea';
 
 interface VoiceRoomProps {
@@ -57,7 +61,24 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
 
   const [showVoiceChat, setShowVoiceChat] = useState(false);
   const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
+  const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [isTheater, setIsTheater] = useState(false);
+
+  const {
+    isCoopHost,
+    isCoopActive,
+    players,
+    pendingRequests,
+    isPanelOpen,
+    mySlot,
+    startHostCoop,
+    setPanelOpen,
+    init: initCoop,
+  } = useCoopStore();
+
+  React.useEffect(() => {
+    initCoop();
+  }, [initCoop]);
 
   const isConnected = activeVoiceChannelId === channel.id;
   const participants = participantsByChannel[channel.id] || [];
@@ -93,19 +114,65 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
             </span>
           </div>
 
-          {/* Toggle Voice Channel Chat Drawer (Just like Discord!) */}
-          <button
-            onClick={() => setShowVoiceChat(!showVoiceChat)}
-            title={showVoiceChat ? 'Hide Voice Channel Chat' : 'Open Voice Channel Chat'}
-            className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-colors cursor-pointer ${
-              showVoiceChat
-                ? 'bg-discord-active text-white'
-                : 'bg-discord-sidebar text-discord-gray-300 hover:bg-discord-hover hover:text-white'
-            }`}
-          >
-            <MessageSquare className="w-4 h-4" />
-            <span>Voice Chat</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Co-op Remote Play Header Action (When sharing or viewing screen) */}
+            {(isScreenSharing || screenSharingParticipant) && (
+              <>
+                {screenSharingParticipant?.userId === currentUser?.id ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isCoopHost && currentUser) {
+                        startHostCoop(currentUser.id);
+                      } else {
+                        setPanelOpen(!isPanelOpen);
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition shadow cursor-pointer border ${
+                      isCoopHost
+                        ? 'bg-indigo-600 border-indigo-400 text-white shadow-indigo-600/40'
+                        : 'bg-indigo-600/30 hover:bg-indigo-600 border-indigo-500/40 text-indigo-200 hover:text-white'
+                    }`}
+                  >
+                    <Gamepad2 className="w-4 h-4" />
+                    <span>
+                      {isCoopHost
+                        ? `Co-op Active (${players.length})`
+                        : '🎮 Enable Co-op Play'}
+                    </span>
+                    {pendingRequests.length > 0 && (
+                      <span className="w-4 h-4 rounded-full bg-amber-400 text-black text-[10px] font-bold flex items-center justify-center animate-bounce">
+                        {pendingRequests.length}
+                      </span>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsJoinModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow transition cursor-pointer border border-indigo-400/40"
+                  >
+                    <Gamepad2 className="w-4 h-4" />
+                    <span>{mySlot ? `Playing as P${mySlot}` : '🎮 Play Co-op (Join)'}</span>
+                  </button>
+                )}
+              </>
+            )}
+
+            {/* Toggle Voice Channel Chat Drawer (Just like Discord!) */}
+            <button
+              onClick={() => setShowVoiceChat(!showVoiceChat)}
+              title={showVoiceChat ? 'Hide Voice Channel Chat' : 'Open Voice Channel Chat'}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-colors cursor-pointer ${
+                showVoiceChat
+                  ? 'bg-discord-active text-white'
+                  : 'bg-discord-sidebar text-discord-gray-300 hover:bg-discord-hover hover:text-white'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span>Voice Chat</span>
+            </button>
+          </div>
         </div>
 
         {/* Viewing Voice Channel Banner */}
@@ -333,6 +400,33 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
                 >
                   <Sliders className="w-4 h-4" />
                 </button>
+
+                {/* Co-op Remote Play Quick Button (When sharing screen) */}
+                {isScreenSharing && (
+                  <button
+                    onClick={() => {
+                      if (!isCoopHost && currentUser) {
+                        startHostCoop(currentUser.id);
+                      } else {
+                        setPanelOpen(!isPanelOpen);
+                      }
+                    }}
+                    title="Co-op Remote Play (Virtual Xbox Controllers & Keyboard Injection)"
+                    className={`px-4 h-12 rounded-full flex items-center gap-2 font-bold text-xs transition-all cursor-pointer shadow-lg border ml-1 ${
+                      isCoopHost
+                        ? 'bg-indigo-600 border-indigo-400 text-white shadow-indigo-600/40'
+                        : 'bg-indigo-600/25 hover:bg-indigo-600 border-indigo-500/40 text-indigo-200 hover:text-white'
+                    }`}
+                  >
+                    <Gamepad2 className="w-5 h-5" />
+                    <span>{isCoopHost ? `Co-op (${players.length})` : '🎮 Co-op Play'}</span>
+                    {pendingRequests.length > 0 && (
+                      <span className="w-4 h-4 rounded-full bg-amber-400 text-black text-[10px] font-bold flex items-center justify-center animate-bounce">
+                        {pendingRequests.length}
+                      </span>
+                    )}
+                  </button>
+                )}
               </div>
 
               {/* Disconnect Voice */}
@@ -378,6 +472,21 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
         onStartStream={handleStartStream}
         defaultPreset={streamQuality}
       />
+
+      {/* Co-op Host Management Drawer */}
+      {isPanelOpen && isScreenSharing && (
+        <CoopHostPanel onClose={() => setPanelOpen(false)} />
+      )}
+
+      {/* Viewer Co-op Join Modal */}
+      {isJoinModalOpen && screenSharingParticipant && currentUser && (
+        <CoopJoinModal
+          hostUserId={screenSharingParticipant.userId}
+          hostName={screenSharingParticipant.user.displayName}
+          currentUser={currentUser}
+          onClose={() => setIsJoinModalOpen(false)}
+        />
+      )}
     </div>
   );
 };
