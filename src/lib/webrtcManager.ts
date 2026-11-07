@@ -295,46 +295,94 @@ class WebRTCManager {
       SCREEN_SHARE_PRESETS.balanced;
 
     try {
+      let stream: MediaStream | null = null;
+
       if (options?.sourceId) {
-        // Native Electron capture directly from selected window / screen
-        const constraints: any = {
-          audio:
-            options?.systemAudio !== false
-              ? {
-                  mandatory: {
-                    chromeMediaSource: 'desktop',
-                  },
-                }
-              : false,
-          video: {
-            mandatory: {
-              chromeMediaSource: 'desktop',
-              chromeMediaSourceId: options.sourceId,
-              maxFrameRate: preset.frameRate,
-              maxWidth: preset.resolution.width,
-              maxHeight: preset.resolution.height,
-            },
-          },
-        };
-        this.localScreenStream = await navigator.mediaDevices.getUserMedia(constraints);
-      } else {
-        // Web / PWA fallback displayMedia constraints
-        this.localScreenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: {
-            frameRate: { ideal: preset.frameRate, max: preset.frameRate },
-            width: { ideal: preset.resolution.width, max: preset.resolution.width },
-            height: { ideal: preset.resolution.height, max: preset.resolution.height },
-          },
-          audio:
-            options?.systemAudio !== false
-              ? {
-                  echoCancellation: false,
-                  noiseSuppression: false,
-                  autoGainControl: false,
-                }
-              : false,
-        });
+        const isScreenSource = options.sourceId.startsWith('screen:');
+
+        // 1. Try native capture with system audio (only on whole screens, Windows limitation for window loopback)
+        if (options?.systemAudio !== false && isScreenSource) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                mandatory: {
+                  chromeMediaSource: 'desktop',
+                },
+              },
+              video: {
+                mandatory: {
+                  chromeMediaSource: 'desktop',
+                  chromeMediaSourceId: options.sourceId,
+                  maxFrameRate: preset.frameRate,
+                  maxWidth: preset.resolution.width,
+                  maxHeight: preset.resolution.height,
+                },
+              },
+            } as any);
+          } catch (audioErr) {
+            console.warn('[ScreenShare] Capture with audio failed, falling back to video-only:', audioErr);
+          }
+        }
+
+        // 2. Try native capture video-only if audio failed or was not requested
+        if (!stream) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: false,
+              video: {
+                mandatory: {
+                  chromeMediaSource: 'desktop',
+                  chromeMediaSourceId: options.sourceId,
+                  maxFrameRate: preset.frameRate,
+                  maxWidth: preset.resolution.width,
+                  maxHeight: preset.resolution.height,
+                },
+              },
+            } as any);
+          } catch (vidErr) {
+            console.warn('[ScreenShare] Native sourceId capture failed, falling back to getDisplayMedia:', vidErr);
+          }
+        }
       }
+
+      // 3. Fallback to standard getDisplayMedia (Web or if native source capture failed)
+      if (!stream) {
+        if (options?.systemAudio !== false) {
+          try {
+            stream = await navigator.mediaDevices.getDisplayMedia({
+              video: {
+                frameRate: { ideal: preset.frameRate, max: preset.frameRate },
+                width: { ideal: preset.resolution.width, max: preset.resolution.width },
+                height: { ideal: preset.resolution.height, max: preset.resolution.height },
+              },
+              audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+              },
+            });
+          } catch (dispAudioErr) {
+            console.warn('[ScreenShare] getDisplayMedia with audio failed, retrying video only:', dispAudioErr);
+          }
+        }
+
+        if (!stream) {
+          stream = await navigator.mediaDevices.getDisplayMedia({
+            video: {
+              frameRate: { ideal: preset.frameRate, max: preset.frameRate },
+              width: { ideal: preset.resolution.width, max: preset.resolution.width },
+              height: { ideal: preset.resolution.height, max: preset.resolution.height },
+            },
+            audio: false,
+          });
+        }
+      }
+
+      if (!stream || stream.getVideoTracks().length === 0) {
+        throw new Error('No video track obtained from screen capture');
+      }
+
+      this.localScreenStream = stream;
 
       this.localScreenStream.getVideoTracks()[0].onended = () => {
         this.stopScreenShare();

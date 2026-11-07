@@ -96,10 +96,48 @@ function createMainWindow() {
     }
   });
 
-  // Grant hardware microphone, audio, and notification permissions automatically
+  // Grant hardware microphone, audio, screen capture, and notification permissions automatically
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    const autoApproved = ['media', 'mediaKeySystem', 'notifications', 'fullscreen', 'pointerLock'];
+    const autoApproved = [
+      'media',
+      'mediaKeySystem',
+      'notifications',
+      'fullscreen',
+      'pointerLock',
+      'display-capture',
+      'screen',
+      'window-placement',
+      'background-sync',
+    ];
     callback(autoApproved.includes(permission));
+  });
+
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    const autoApproved = [
+      'media',
+      'mediaKeySystem',
+      'notifications',
+      'fullscreen',
+      'pointerLock',
+      'display-capture',
+      'screen',
+      'window-placement',
+      'background-sync',
+    ];
+    return autoApproved.includes(permission);
+  });
+
+  // Handle getDisplayMedia requests seamlessly in Electron
+  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
+    desktopCapturer.getSources({ types: ['screen', 'window'] }).then((sources) => {
+      if (sources.length > 0) {
+        callback({ video: sources[0], audio: 'loopback' });
+      } else {
+        callback({ video: null });
+      }
+    }).catch(() => {
+      callback({ video: null });
+    });
   });
 
   // Open external links in default browser instead of navigating inside SquadSpace
