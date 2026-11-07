@@ -410,6 +410,151 @@ export const authService = {
   },
 
   /**
+   * Request password reset link or recovery code
+   */
+  async requestPasswordReset(emailOrUsername: string): Promise<{ success: boolean; error?: string; email?: string }> {
+    if (!isSupabaseConfigured || !supabase) {
+      return { success: false, error: 'Database is not connected.' };
+    }
+
+    try {
+      let email = emailOrUsername.trim().toLowerCase();
+
+      // If user typed username instead of email, lookup email from profiles or local cache
+      if (!email.includes('@')) {
+        const cleanName = email;
+
+        // 1. Check local cache first
+        try {
+          const userCache = JSON.parse(localStorage.getItem('squadspace_users_cache') || '{}');
+          if (userCache[cleanName]) {
+            email = userCache[cleanName];
+          }
+        } catch {}
+
+        // 2. Query profiles if not resolved yet
+        if (!email.includes('@')) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('email')
+            .eq('username', cleanName)
+            .maybeSingle();
+
+          if (profile && (profile as any).email) {
+            email = (profile as any).email;
+          }
+        }
+      }
+
+      if (!email.includes('@')) {
+        return {
+          success: false,
+          error: `Could not find an email associated with username "${emailOrUsername}". Please enter your full registered email address.`,
+        };
+      }
+
+      // Determine redirect URL:
+      // On web browser, use window.location.origin
+      // In Electron or local file:, fallback to public Vercel production URL
+      let redirectUrl = 'https://squadspace-flame.vercel.app';
+      if (typeof window !== 'undefined' && window.location.origin && window.location.origin.startsWith('http')) {
+        redirectUrl = window.location.origin;
+      }
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: redirectUrl,
+      });
+
+      if (error) {
+        if (error.message.toLowerCase().includes('rate limit')) {
+          return {
+            success: false,
+            error: 'For security, please wait a minute before requesting another reset email.',
+            email,
+          };
+        }
+        return { success: false, error: error.message, email };
+      }
+
+      return { success: true, email };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to send password reset email.' };
+    }
+  },
+
+  /**
+   * Verify recovery OTP code (e.g. 6-digit code or email token)
+   */
+  async verifyRecoveryOtp(email: string, token: string): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured || !supabase) {
+      return { success: true };
+    }
+
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        email: email.trim().toLowerCase(),
+        token: token.trim(),
+        type: 'recovery',
+      });
+
+      if (error) {
+        return { success: false, error: error.message };
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to verify recovery code.' };
+    }
+  },
+
+  /**
+   * Update password for recovery or logged in session
+   */
+  async updateUserPassword(newPassword: string): Promise<{ user: UserProfile | null; error?: string }> {
+    if (!isSupabaseConfigured || !supabase) {
+      const saved = localStorage.getItem('squadspace_local_user');
+      if (saved) {
+        try {
+          return { user: JSON.parse(saved) };
+        } catch {}
+      }
+      return { user: null };
+    }
+
+    try {
+      const { data, error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error || !data.user) {
+        return { user: null, error: error?.message || 'Failed to update password.' };
+      }
+
+      // Fetch updated user profile
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', data.user.id)
+        .maybeSingle();
+
+      const meta = data.user.user_metadata || {};
+      const userProfile: UserProfile = {
+        id: data.user.id,
+        username: profile?.username || meta.username || data.user.email?.split('@')[0] || 'user',
+        displayName: profile?.display_name || meta.display_name || profile?.username || meta.username || 'Squad Member',
+        avatarUrl: profile?.avatar_url || meta.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${meta.username || data.user.id}`,
+        status: 'online',
+        customStatus: profile?.custom_status,
+        aboutMe: profile?.about_me,
+        isAdmin: Boolean(profile?.is_admin || meta.is_admin),
+      };
+
+      // Mark online in database
+      await supabase.from('profiles').update({ status: 'online' }).eq('id', data.user.id);
+
+      return { user: userProfile };
+    } catch (err: any) {
+      return { user: null, error: err.message || 'Failed to set new password.' };
+    }
+  },
+
+  /**
    * Change user password
    */
   async changePassword(newPassword: string): Promise<{ success: boolean; error?: string }> {

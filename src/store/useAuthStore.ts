@@ -2,11 +2,15 @@ import { create } from 'zustand';
 import { GamingActivity, UserProfile, UserStatus } from '../types';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
+let authListenerInitialized = false;
+
 interface AuthState {
   currentUser: UserProfile | null;
   isAuthenticated: boolean;
   isLoadingAuth: boolean;
+  isPasswordRecovery: boolean;
   
+  setIsPasswordRecovery: (isRecovery: boolean) => void;
   checkSession: () => Promise<void>;
   updateStatus: (status: UserStatus) => Promise<void>;
   updateCustomStatus: (status: string) => Promise<void>;
@@ -20,6 +24,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   currentUser: null,
   isAuthenticated: false,
   isLoadingAuth: true,
+  isPasswordRecovery: false,
+
+  setIsPasswordRecovery: (isRecovery: boolean) => set({ isPasswordRecovery: isRecovery }),
 
   checkSession: async () => {
     set({ isLoadingAuth: true });
@@ -36,6 +43,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       }
       set({ currentUser: null, isAuthenticated: false, isLoadingAuth: false });
       return;
+    }
+
+    if (!authListenerInitialized) {
+      authListenerInitialized = true;
+      supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          set({ isPasswordRecovery: true });
+        } else if (event === 'SIGNED_OUT') {
+          set({ currentUser: null, isAuthenticated: false, isPasswordRecovery: false });
+        }
+      });
+
+      if (typeof window !== 'undefined' && window.location.hash) {
+        if (window.location.hash.includes('type=recovery')) {
+          set({ isPasswordRecovery: true });
+        }
+      }
     }
 
     try {

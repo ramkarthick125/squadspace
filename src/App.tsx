@@ -32,7 +32,7 @@ export function App() {
 
   const { channels, activeChannelId, activeView, fetchServerData } = useServerStore();
   const { sendMessage, toggleReaction, fetchChannelMessages } = useChatStore();
-  const { currentUser, isAuthenticated, isLoadingAuth, checkSession } = useAuthStore();
+  const { currentUser, isAuthenticated, isLoadingAuth, checkSession, isPasswordRecovery } = useAuthStore();
 
   // Layout states
   const [showMemberList, setShowMemberList] = useState(true);
@@ -340,9 +340,9 @@ export function App() {
         onSelectEmoji={handleSelectEmoji}
       />
 
-      {/* Auth Modal (Prompted when not logged in or on explicit logout) */}
+      {/* Auth Modal (Prompted when not logged in, on explicit logout, or during password recovery) */}
       <AuthModal
-        isOpen={!isAuthenticated || isAuthModalOpen}
+        isOpen={!isAuthenticated || isAuthModalOpen || isPasswordRecovery}
         onClose={() => setIsAuthModalOpen(false)}
         initialInviteCode={urlInviteCode || undefined}
       />
