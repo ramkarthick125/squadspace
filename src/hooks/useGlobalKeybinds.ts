@@ -192,6 +192,8 @@ export function useGlobalKeybinds() {
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('mousedown', handleMouseDown, { capture: true });
     window.addEventListener('mouseup', handleMouseUp, { capture: true });
+    window.addEventListener('pointerdown', handleMouseDown, { capture: true });
+    window.addEventListener('pointerup', handleMouseUp, { capture: true });
     window.addEventListener('blur', handleWindowBlur);
 
     return () => {
@@ -199,6 +201,8 @@ export function useGlobalKeybinds() {
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('mousedown', handleMouseDown, { capture: true });
       window.removeEventListener('mouseup', handleMouseUp, { capture: true });
+      window.removeEventListener('pointerdown', handleMouseDown, { capture: true });
+      window.removeEventListener('pointerup', handleMouseUp, { capture: true });
       window.removeEventListener('blur', handleWindowBlur);
       if (releaseTimeoutRef.current) clearTimeout(releaseTimeoutRef.current);
     };

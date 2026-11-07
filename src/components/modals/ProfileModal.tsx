@@ -142,9 +142,13 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
 
     window.addEventListener('keydown', handleKeyRecord, { capture: true });
     window.addEventListener('mousedown', handleMouseRecord, { capture: true });
+    window.addEventListener('pointerdown', handleMouseRecord, { capture: true });
+    window.addEventListener('auxclick', handleMouseRecord, { capture: true });
     return () => {
       window.removeEventListener('keydown', handleKeyRecord, { capture: true });
       window.removeEventListener('mousedown', handleMouseRecord, { capture: true });
+      window.removeEventListener('pointerdown', handleMouseRecord, { capture: true });
+      window.removeEventListener('auxclick', handleMouseRecord, { capture: true });
     };
   }, [recordingKeybindFor, setKeybind]);
 

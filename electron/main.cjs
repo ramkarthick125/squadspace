@@ -152,17 +152,9 @@ function createMainWindow() {
   });
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith('http://localhost') && !url.startsWith(REMOTE_APP_URL) && !url.startsWith('file://')) {
+    if (!url.startsWith('http://localhost') && !url.startsWith('file://')) {
       event.preventDefault();
       shell.openExternal(url);
-    }
-  });
-
-  // Fallback to local files if remote load fails (e.g. offline)
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
-    if (validatedURL && validatedURL.startsWith('http') && !validatedURL.includes('localhost')) {
-      console.warn(`Remote load failed (${errorCode}: ${errorDescription}), falling back to local files.`);
-      mainWindow.loadFile(path.join(__dirname, '../dist/index.html')).catch(() => {});
     }
   });
 
@@ -175,13 +167,16 @@ function createMainWindow() {
     }
   });
 
-  // Load URL: Dev Server -> Remote Live URL -> Local Fallback Bundle
-  if (isDev && process.env.VITE_DEV_SERVER_URL) {
+  // Load URL: Dev Server -> Local Bundled App (Fast, Native Co-op & Gaming Mouse Support)
+  if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
-  } else {
-    mainWindow.loadURL(REMOTE_APP_URL).catch((err) => {
-      console.warn('Failed to load remote URL, falling back to local bundle:', err);
+  } else if (process.env.SQUADSPACE_REMOTE_URL) {
+    mainWindow.loadURL(process.env.SQUADSPACE_REMOTE_URL).catch(() => {
       mainWindow.loadFile(path.join(__dirname, '../dist/index.html')).catch(() => {});
+    });
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html')).catch((err) => {
+      console.error('Failed to load local index.html:', err);
     });
   }
 }
