@@ -31,7 +31,8 @@ type ParticipantJoinedCallback = (
   user: UserProfile,
   isMuted?: boolean,
   isScreenSharing?: boolean,
-  customJoinSound?: string
+  customJoinSound?: string,
+  isNewJoin?: boolean
 ) => void;
 type ParticipantLeftCallback = (userId: string) => void;
 type ParticipantUpdateCallback = (userId: string, updates: Partial<VoiceParticipant>) => void;
@@ -199,24 +200,7 @@ class WebRTCManager {
     setTimeout(() => this.broadcastJoin(), 600);
     setTimeout(() => this.broadcastJoin(), 1500);
 
-    // 5. Play entrance chime (user's custom audio or default)
-    try {
-      const stored = localStorage.getItem('squadspace_custom_join_sound');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.dataUrl) {
-          sounds.playCustomSound(parsed.dataUrl);
-        } else {
-          sounds.playJoinVoice();
-        }
-      } else {
-        sounds.playJoinVoice();
-      }
-    } catch {
-      sounds.playJoinVoice();
-    }
-
-    // 6. Periodic presence heartbeat (every 4 seconds) to guarantee sync across users
+    // 5. Periodic presence heartbeat (every 4 seconds) to guarantee sync across users
     if (this.presenceHeartbeatInterval) {
       clearInterval(this.presenceHeartbeatInterval);
     }
@@ -905,8 +889,9 @@ class WebRTCManager {
       case 'presence': {
         // A peer joined or is present in our voice channel
         if (data.user) {
+          const isNewJoin = data.type === 'join';
           this.onParticipantJoinedCallbacks.forEach((cb) =>
-            cb(data.user, data.isMuted, data.isScreenSharing, data.customJoinSound)
+            cb(data.user, data.isMuted, data.isScreenSharing, data.customJoinSound, isNewJoin)
           );
         }
 
@@ -930,17 +915,11 @@ class WebRTCManager {
         break;
       }
 
-      case 'custom-join-sound': {
-        if (data.soundData && data.senderId !== this.myUserId) {
-          sounds.playCustomSound(data.soundData);
-        }
-        break;
-      }
-
       case 'announce': {
         if (data.targetId === this.myUserId && data.user) {
+          // Announce comes from users who were already in the room; do not play join sound
           this.onParticipantJoinedCallbacks.forEach((cb) =>
-            cb(data.user, data.isMuted, data.isScreenSharing)
+            cb(data.user, data.isMuted, data.isScreenSharing, undefined, false)
           );
           if (!this.peers.has(data.senderId) && this.myUserId < data.senderId) {
             await this.createAndSendOffer(data.senderId);

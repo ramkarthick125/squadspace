@@ -39,6 +39,7 @@ let remoteTrackUnsub: (() => void) | null = null;
 let participantJoinedUnsub: (() => void) | null = null;
 let participantLeftUnsub: (() => void) | null = null;
 let participantUpdateUnsub: (() => void) | null = null;
+const playedJoinChimeUserIds = new Set<string>();
 
 export const useVoiceStore = create<VoiceState>((set, get) => ({
   activeVoiceChannelId: null,
@@ -96,39 +97,50 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     });
 
     if (participantJoinedUnsub) participantJoinedUnsub();
-    participantJoinedUnsub = webrtcManager.onParticipantJoined((remoteUser, remoteMuted, remoteScreen, customJoinSound) => {
-      const { activeVoiceChannelId, participantsByChannel } = get();
-      if (!activeVoiceChannelId) return;
+    participantJoinedUnsub = webrtcManager.onParticipantJoined(
+      (remoteUser, remoteMuted, remoteScreen, customJoinSound, isNewJoin) => {
+        const { activeVoiceChannelId, participantsByChannel } = get();
+        if (!activeVoiceChannelId) return;
 
-      const currentList = participantsByChannel[activeVoiceChannelId] || [];
-      if (!currentList.some((p) => p.userId === remoteUser.id)) {
-        const newRemoteP: VoiceParticipant = {
-          userId: remoteUser.id,
-          user: remoteUser,
-          isMuted: Boolean(remoteMuted),
-          isDeafened: false,
-          isSpeaking: false,
-          isScreenSharing: Boolean(remoteScreen),
-          joinedAt: new Date().toISOString(),
-        };
+        const currentList = participantsByChannel[activeVoiceChannelId] || [];
+        const isAlreadyInList = currentList.some((p) => p.userId === remoteUser.id);
 
-        set({
-          participantsByChannel: {
-            ...participantsByChannel,
-            [activeVoiceChannelId]: [...currentList, newRemoteP],
-          },
-        });
+        if (!isAlreadyInList) {
+          const newRemoteP: VoiceParticipant = {
+            userId: remoteUser.id,
+            user: remoteUser,
+            isMuted: Boolean(remoteMuted),
+            isDeafened: false,
+            isSpeaking: false,
+            isScreenSharing: Boolean(remoteScreen),
+            joinedAt: new Date().toISOString(),
+          };
 
-        if (customJoinSound) {
-          sounds.playCustomSound(customJoinSound);
-        } else {
-          sounds.playJoinVoice();
+          set({
+            participantsByChannel: {
+              ...participantsByChannel,
+              [activeVoiceChannelId]: [...currentList, newRemoteP],
+            },
+          });
+        }
+
+        // Only play join sound when a NEW user arrives (type === 'join'),
+        // not for existing users announcing themselves on connect,
+        // and only once per user session
+        if (isNewJoin && !playedJoinChimeUserIds.has(remoteUser.id)) {
+          playedJoinChimeUserIds.add(remoteUser.id);
+          if (customJoinSound) {
+            sounds.playCustomSound(customJoinSound);
+          } else {
+            sounds.playJoinVoice();
+          }
         }
       }
-    });
+    );
 
     if (participantLeftUnsub) participantLeftUnsub();
     participantLeftUnsub = webrtcManager.onParticipantLeft((peerId) => {
+      playedJoinChimeUserIds.delete(peerId);
       const { activeVoiceChannelId, participantsByChannel, screenShareParticipantId } = get();
       if (!activeVoiceChannelId) return;
 
@@ -198,12 +210,25 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       participantsByChannel: updated,
     });
 
-    sounds.playJoinVoice();
+    // Play local entrance sound once: custom chime if set, otherwise default Discord join blip
+    try {
+      const stored = localStorage.getItem('squadspace_custom_join_sound');
+      const parsed = stored ? JSON.parse(stored) : null;
+      if (parsed?.dataUrl) {
+        sounds.playCustomSound(parsed.dataUrl);
+      } else {
+        sounds.playJoinVoice();
+      }
+    } catch {
+      sounds.playJoinVoice();
+    }
+
     realtimeService.broadcastVoiceState(channelId, currentUser, 'joined', isMuted);
     return true;
   },
 
   leaveVoiceChannel: (currentUser) => {
+    playedJoinChimeUserIds.clear();
     const { activeVoiceChannelId, participantsByChannel } = get();
     if (!activeVoiceChannelId) return;
 
