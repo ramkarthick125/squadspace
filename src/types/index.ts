@@ -139,6 +139,7 @@ export interface ElectronAPI {
   getScreenSources: () => Promise<DesktopCaptureSource[]>;
   onToggleMute: (callback: () => void) => () => void;
   onToggleDeafen: (callback: () => void) => () => void;
+  onAppCommandMouse?: (callback: (button: 'Mouse4' | 'Mouse5') => void) => () => void;
   onDeepLink: (callback: (url: string) => void) => () => void;
 
   // Co-op Remote Play

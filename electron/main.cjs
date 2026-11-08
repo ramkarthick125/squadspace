@@ -157,6 +157,17 @@ function createMainWindow() {
     }
   });
 
+  // Prevent gaming mouse back/forward buttons (Mouse 4 / Mouse 5) from navigating away
+  mainWindow.on('app-command', (e, cmd) => {
+    if (cmd === 'browser-backward' || cmd === 'browser-forward') {
+      e.preventDefault();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        const mouseBtn = cmd === 'browser-backward' ? 'Mouse4' : 'Mouse5';
+        mainWindow.webContents.send('hotkey:mouse-click', mouseBtn);
+      }
+    }
+  });
+
   // Cleanly quit application on close
   mainWindow.on('close', () => {
     isQuitting = true;

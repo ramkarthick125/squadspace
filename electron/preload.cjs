@@ -28,6 +28,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('hotkey:toggle-deafen', handler);
     return () => ipcRenderer.removeListener('hotkey:toggle-deafen', handler);
   },
+  onAppCommandMouse: (callback) => {
+    const handler = (_event, mouseBtn) => callback(mouseBtn);
+    ipcRenderer.on('hotkey:mouse-click', handler);
+    return () => ipcRenderer.removeListener('hotkey:mouse-click', handler);
+  },
 
   // Deep Linking (squadspace://invite/sqd-xxx)
   onDeepLink: (callback) => {

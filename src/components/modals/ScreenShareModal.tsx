@@ -221,6 +221,13 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
           {/* TAB 1: Applications (Electron Only) */}
           {activeTab === 'apps' && isElectron && (
             <div className="space-y-3">
+              <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-2">
+                <span className="text-sm mt-0.5">⚠️</span>
+                <div>
+                  <strong>Black screen on YouTube or games?</strong> Browsers and protected apps use GPU overlays that show as black boxes when sharing a window. Switch to the <strong>&quot;Screens&quot;</strong> tab to share your entire display cleanly, or disable hardware acceleration in Chrome/Edge settings.
+                </div>
+              </div>
+
               <div className="text-[11px] font-bold text-discord-gray-400 uppercase tracking-wider">
                 Select an Application Window
               </div>

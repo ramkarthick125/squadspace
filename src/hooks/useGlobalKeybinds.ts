@@ -160,10 +160,9 @@ export function useGlobalKeybinds() {
 
     const handleMouseUp = (e: MouseEvent) => {
       if (inputMode === 'push_to_talk' && activeVoiceChannelId) {
-        if (matchesMousebind(e, keybinds.pushToTalk)) {
-          if (e.button === 0) return;
-
-          e.preventDefault();
+        const isTargetButton = matchesMousebind(e, keybinds.pushToTalk);
+        // If the target button was released OR no mouse buttons remain pressed at all (e.buttons === 0)
+        if (isTargetButton || (isPttDownRef.current && e.buttons === 0)) {
           if (isPttDownRef.current) {
             if (releaseTimeoutRef.current) clearTimeout(releaseTimeoutRef.current);
             releaseTimeoutRef.current = setTimeout(() => {
@@ -188,12 +187,33 @@ export function useGlobalKeybinds() {
       }
     };
 
+    // Native Electron gaming mouse backward/forward command listener
+    const unbindAppCommand = window.electronAPI?.onAppCommandMouse?.((mouseBtn) => {
+      if (inputMode === 'push_to_talk' && activeVoiceChannelId && keybinds.pushToTalk === mouseBtn) {
+        if (releaseTimeoutRef.current) clearTimeout(releaseTimeoutRef.current);
+        if (!isPttDownRef.current) {
+          isPttDownRef.current = true;
+          setPttPressed(true);
+          webrtcManager.setPttActive(true);
+          sounds.playPttActivate();
+        }
+        // Auto-release after release delay once pulse stops
+        releaseTimeoutRef.current = setTimeout(() => {
+          isPttDownRef.current = false;
+          setPttPressed(false);
+          webrtcManager.setPttActive(false);
+          sounds.playPttDeactivate();
+        }, Math.max(250, pttReleaseDelay));
+      }
+    });
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('mousedown', handleMouseDown, { capture: true });
     window.addEventListener('mouseup', handleMouseUp, { capture: true });
     window.addEventListener('pointerdown', handleMouseDown, { capture: true });
     window.addEventListener('pointerup', handleMouseUp, { capture: true });
+    window.addEventListener('pointercancel', handleWindowBlur);
     window.addEventListener('blur', handleWindowBlur);
 
     return () => {
@@ -203,7 +223,9 @@ export function useGlobalKeybinds() {
       window.removeEventListener('mouseup', handleMouseUp, { capture: true });
       window.removeEventListener('pointerdown', handleMouseDown, { capture: true });
       window.removeEventListener('pointerup', handleMouseUp, { capture: true });
+      window.removeEventListener('pointercancel', handleWindowBlur);
       window.removeEventListener('blur', handleWindowBlur);
+      if (unbindAppCommand) unbindAppCommand();
       if (releaseTimeoutRef.current) clearTimeout(releaseTimeoutRef.current);
     };
   }, [inputMode, keybinds, pttReleaseDelay, activeVoiceChannelId, toggleMute, toggleDeafen, setPttPressed]);

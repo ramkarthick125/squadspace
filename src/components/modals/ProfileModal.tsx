@@ -113,6 +113,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
       combo += key;
 
       setKeybind(recordingKeybindFor, combo);
+      if (recordingKeybindFor === 'pushToTalk') {
+        setInputMode('push_to_talk');
+      }
       setRecordingKeybindFor(null);
     };
 
@@ -137,20 +140,42 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
       combo += mouseKey;
 
       setKeybind(recordingKeybindFor, combo);
+      if (recordingKeybindFor === 'pushToTalk') {
+        setInputMode('push_to_talk');
+      }
       setRecordingKeybindFor(null);
     };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    // Native Electron gaming mouse backward/forward command listener
+    const unbindAppCommand = window.electronAPI?.onAppCommandMouse?.((mouseBtn) => {
+      if (recordingKeybindFor) {
+        setKeybind(recordingKeybindFor, mouseBtn);
+        if (recordingKeybindFor === 'pushToTalk') {
+          setInputMode('push_to_talk');
+        }
+        setRecordingKeybindFor(null);
+      }
+    });
 
     window.addEventListener('keydown', handleKeyRecord, { capture: true });
     window.addEventListener('mousedown', handleMouseRecord, { capture: true });
     window.addEventListener('pointerdown', handleMouseRecord, { capture: true });
     window.addEventListener('auxclick', handleMouseRecord, { capture: true });
+    window.addEventListener('contextmenu', handleContextMenu, { capture: true });
     return () => {
       window.removeEventListener('keydown', handleKeyRecord, { capture: true });
       window.removeEventListener('mousedown', handleMouseRecord, { capture: true });
       window.removeEventListener('pointerdown', handleMouseRecord, { capture: true });
       window.removeEventListener('auxclick', handleMouseRecord, { capture: true });
+      window.removeEventListener('contextmenu', handleContextMenu, { capture: true });
+      if (unbindAppCommand) unbindAppCommand();
     };
-  }, [recordingKeybindFor, setKeybind]);
+  }, [recordingKeybindFor, setKeybind, setInputMode]);
 
   useEffect(() => {
     if (currentUser) {
@@ -595,7 +620,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                       <span className="text-[10px] text-discord-gray-400 mr-1 font-semibold">Quick Select:</span>
                       <button
                         type="button"
-                        onClick={() => setKeybind('pushToTalk', 'Mouse4')}
+                        onClick={() => {
+                          setKeybind('pushToTalk', 'Mouse4');
+                          setInputMode('push_to_talk');
+                        }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'Mouse4'
                             ? 'bg-discord-blurple text-white border-discord-blurple shadow'
@@ -606,7 +634,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                       </button>
                       <button
                         type="button"
-                        onClick={() => setKeybind('pushToTalk', 'Mouse5')}
+                        onClick={() => {
+                          setKeybind('pushToTalk', 'Mouse5');
+                          setInputMode('push_to_talk');
+                        }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'Mouse5'
                             ? 'bg-discord-blurple text-white border-discord-blurple shadow'
@@ -617,7 +648,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                       </button>
                       <button
                         type="button"
-                        onClick={() => setKeybind('pushToTalk', 'Mouse3')}
+                        onClick={() => {
+                          setKeybind('pushToTalk', 'Mouse3');
+                          setInputMode('push_to_talk');
+                        }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'Mouse3'
                             ? 'bg-discord-blurple text-white border-discord-blurple shadow'
@@ -628,7 +662,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                       </button>
                       <button
                         type="button"
-                        onClick={() => setKeybind('pushToTalk', 'ControlRight')}
+                        onClick={() => {
+                          setKeybind('pushToTalk', 'ControlRight');
+                          setInputMode('push_to_talk');
+                        }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'ControlRight'
                             ? 'bg-discord-blurple text-white border-discord-blurple shadow'
@@ -639,7 +676,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                       </button>
                       <button
                         type="button"
-                        onClick={() => setKeybind('pushToTalk', 'Backquote')}
+                        onClick={() => {
+                          setKeybind('pushToTalk', 'Backquote');
+                          setInputMode('push_to_talk');
+                        }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'Backquote'
                             ? 'bg-discord-blurple text-white border-discord-blurple shadow'
@@ -790,7 +830,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                       <span className="text-[10px] text-discord-gray-400 mr-1 font-semibold">Quick Select:</span>
                       <button
                         type="button"
-                        onClick={() => setKeybind('pushToTalk', 'Mouse4')}
+                        onClick={() => {
+                          setKeybind('pushToTalk', 'Mouse4');
+                          setInputMode('push_to_talk');
+                        }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'Mouse4'
                             ? 'bg-discord-blurple text-white border-discord-blurple shadow'
@@ -801,7 +844,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                       </button>
                       <button
                         type="button"
-                        onClick={() => setKeybind('pushToTalk', 'Mouse5')}
+                        onClick={() => {
+                          setKeybind('pushToTalk', 'Mouse5');
+                          setInputMode('push_to_talk');
+                        }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'Mouse5'
                             ? 'bg-discord-blurple text-white border-discord-blurple shadow'
@@ -812,7 +858,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                       </button>
                       <button
                         type="button"
-                        onClick={() => setKeybind('pushToTalk', 'Mouse3')}
+                        onClick={() => {
+                          setKeybind('pushToTalk', 'Mouse3');
+                          setInputMode('push_to_talk');
+                        }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'Mouse3'
                             ? 'bg-discord-blurple text-white border-discord-blurple shadow'
@@ -823,7 +872,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                       </button>
                       <button
                         type="button"
-                        onClick={() => setKeybind('pushToTalk', 'ControlRight')}
+                        onClick={() => {
+                          setKeybind('pushToTalk', 'ControlRight');
+                          setInputMode('push_to_talk');
+                        }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'ControlRight'
                             ? 'bg-discord-blurple text-white border-discord-blurple shadow'
@@ -834,7 +886,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                       </button>
                       <button
                         type="button"
-                        onClick={() => setKeybind('pushToTalk', 'Backquote')}
+                        onClick={() => {
+                          setKeybind('pushToTalk', 'Backquote');
+                          setInputMode('push_to_talk');
+                        }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'Backquote'
                             ? 'bg-discord-blurple text-white border-discord-blurple shadow'
