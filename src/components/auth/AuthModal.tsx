@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Eye,
   EyeOff,
+  X,
 } from 'lucide-react';
 import { authService } from '../../lib/authService';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -25,6 +26,8 @@ interface AuthModalProps {
 type AuthTab = 'login' | 'register' | 'forgot_password' | 'enter_code' | 'set_new_password';
 
 export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialInviteCode }) => {
+  const isElectron = Boolean(window.electronAPI?.isElectron);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isPasswordRecovery = useAuthStore((s) => s.isPasswordRecovery);
   const setIsPasswordRecovery = useAuthStore((s) => s.setIsPasswordRecovery);
 
@@ -241,8 +244,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialIn
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md select-none p-4">
+    <div
+      className={`fixed inset-0 ${isElectron ? 'top-7' : 'top-0'} z-50 flex items-center justify-center bg-black/80 backdrop-blur-md select-none p-4`}
+    >
       <div className="w-full max-w-md bg-discord-chat rounded-2xl border border-discord-darkest shadow-2xl p-8 relative overflow-hidden">
+        {/* Top-Right Close Button on Modal Card */}
+        <button
+          type="button"
+          onClick={() => {
+            if (onClose && isAuthenticated) {
+              onClose();
+            } else if (isElectron) {
+              window.electronAPI?.close();
+            } else if (onClose) {
+              onClose();
+            }
+          }}
+          title={isAuthenticated ? 'Close' : 'Exit SquadSpace'}
+          className="absolute top-4 right-4 text-discord-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-discord-darkest transition-colors cursor-pointer z-10"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
         {/* Glow Accent */}
         <div className="absolute -top-16 -left-16 w-36 h-36 bg-discord-blurple/20 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-16 -right-16 w-36 h-36 bg-discord-green/20 rounded-full blur-3xl pointer-events-none" />
@@ -282,8 +305,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialIn
               : 'Private squad voice, video & chat hangout.'}
           </p>
 
-          {/* Segmented Control Tabs (Shown in login, register, and forgot_password modes) */}
-          {(tab === 'login' || tab === 'register' || tab === 'forgot_password') && (
+          {/* Segmented Control Tabs (Clean 2-tab switch: Log In & Register) */}
+          {(tab === 'login' || tab === 'register') && (
             <div className="flex bg-discord-darkest rounded-xl p-1 mt-4 border border-discord-darkest">
               <button
                 type="button"
@@ -315,20 +338,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialIn
               >
                 Register
               </button>
+            </div>
+          )}
+
+          {/* Back to Login link when in Forgot Password or Code mode */}
+          {(tab === 'forgot_password' || tab === 'enter_code') && (
+            <div className="mt-3">
               <button
                 type="button"
                 onClick={() => {
-                  setTab('forgot_password');
+                  setTab('login');
                   setError(null);
                   setSuccessMsg(null);
                 }}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                  tab === 'forgot_password'
-                    ? 'bg-amber-500 text-black shadow'
-                    : 'text-discord-gray-400 hover:text-discord-gray-200'
-                }`}
+                className="inline-flex items-center gap-1.5 text-xs text-discord-blurple hover:text-discord-blurple-light transition-colors hover:underline font-semibold cursor-pointer"
               >
-                Forgot Password
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>Back to Log In</span>
               </button>
             </div>
           )}
@@ -492,25 +518,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialIn
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-
-              {/* Discord-style prominent link under password box */}
-              {tab === 'login' && (
-                <div className="mt-1.5 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTab('forgot_password');
-                      setResetIdentifier(email);
-                      setError(null);
-                      setSuccessMsg(null);
-                    }}
-                    className="text-xs text-amber-400 hover:text-amber-300 transition-colors hover:underline font-medium cursor-pointer inline-flex items-center gap-1"
-                  >
-                    <Key className="w-3.5 h-3.5" />
-                    <span>Forgot your password?</span>
-                  </button>
-                </div>
-              )}
             </div>
 
             {/* Submit Button */}
@@ -785,57 +792,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialIn
         {/* Footer info */}
         <div className="mt-5 pt-3 border-t border-discord-darkest/40 text-center text-xs text-discord-gray-400">
           {tab === 'login' ? (
-            <div className="flex items-center justify-between text-xs">
-              <span>
-                Need an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTab('register');
-                    setError(null);
-                  }}
-                  className="text-discord-blurple-light hover:underline font-semibold"
-                >
-                  Register
-                </button>
-              </span>
+            <div>
+              <span>Need an account? </span>
               <button
                 type="button"
                 onClick={() => {
-                  setTab('forgot_password');
+                  setTab('register');
                   setError(null);
                 }}
-                className="text-amber-400 hover:text-amber-300 hover:underline font-semibold flex items-center gap-1"
+                className="text-discord-blurple-light hover:underline font-semibold cursor-pointer"
               >
-                <Key className="w-3 h-3" />
-                <span>Forgot Password?</span>
+                Register
               </button>
             </div>
           ) : tab === 'register' ? (
-            <div className="flex items-center justify-between text-xs">
-              <span>
-                Already have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setTab('login');
-                    setError(null);
-                  }}
-                  className="text-discord-blurple-light hover:underline font-semibold"
-                >
-                  Log In
-                </button>
-              </span>
+            <div>
+              <span>Already have an account? </span>
               <button
                 type="button"
                 onClick={() => {
-                  setTab('forgot_password');
+                  setTab('login');
                   setError(null);
                 }}
-                className="text-amber-400 hover:text-amber-300 hover:underline font-semibold flex items-center gap-1"
+                className="text-discord-blurple-light hover:underline font-semibold cursor-pointer"
               >
-                <Key className="w-3 h-3" />
-                <span>Forgot Password?</span>
+                Log In
               </button>
             </div>
           ) : (

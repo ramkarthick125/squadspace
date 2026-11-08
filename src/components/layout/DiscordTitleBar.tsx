@@ -41,7 +41,7 @@ export const DiscordTitleBar: React.FC = () => {
 
   return (
     <div
-      className="h-7 w-full bg-[#1e1f22] border-b border-[#111214] flex items-center justify-between select-none z-50 text-discord-gray-400 text-xs flex-shrink-0"
+      className="h-7 w-full bg-[#1e1f22] border-b border-[#111214] flex items-center justify-between select-none z-[100] text-discord-gray-400 text-xs flex-shrink-0 relative"
       style={{ WebkitAppRegion: 'drag' } as any}
     >
       {/* App Branding & Window Title */}
@@ -53,7 +53,7 @@ export const DiscordTitleBar: React.FC = () => {
           SquadSpace
         </span>
         <span className="text-[10px] text-discord-gray-500">
-          — {activeView === 'dm' ? 'Direct Messages' : serverName || 'Hangout'}
+          — {!currentUser ? 'Log In' : activeView === 'dm' ? 'Direct Messages' : serverName || 'Hangout'}
         </span>
       </div>
 
