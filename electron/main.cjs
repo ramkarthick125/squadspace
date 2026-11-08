@@ -178,61 +178,65 @@ function createMainWindow() {
 }
 
 function createTray() {
-  // Simple 16x16 tray icon
-  const icon = nativeImage.createFromBuffer(
-    Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAZElEQVQ4T2NkGGDAOMD/n4EYQx2jBpA0jBpA0jBpAJt6mH0MyT0jL15kGHAeBmM0cWwGoLpjhGvABbBFB6V+Jtcw7A5GFsf4A11qGP7/PwO6R1kZ8ANs5mH3H6m24w0u7HEGAEx9LzP6eM3OAAAAAElFTkSuQmCC',
-      'base64'
-    )
-  );
+  try {
+    // Simple 16x16 tray icon
+    const icon = nativeImage.createFromBuffer(
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAZElEQVQ4T2NkGGDAOMD/n4EYQx2jBpA0jBpA0jBpAJt6mH0MyT0jL15kGHAeBmM0cWwGoLpjhGvABbBFB6V+Jtcw7A5GFsf4A11qGP7/PwO6R1kZ8ANs5mH3H6m24w0u7HEGAEx9LzP6eM3OAAAAAElFTkSuQmCC',
+        'base64'
+      )
+    );
 
-  tray = new Tray(icon);
-  tray.setToolTip('SquadSpace');
+    tray = new Tray(icon);
+    tray.setToolTip('SquadSpace');
 
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Open SquadSpace',
-      click: () => {
-        if (mainWindow) {
-          mainWindow.show();
-          mainWindow.focus();
-        }
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: 'Open SquadSpace',
+        click: () => {
+          if (mainWindow) {
+            mainWindow.show();
+            mainWindow.focus();
+          }
+        },
       },
-    },
-    {
-      label: 'Toggle Mute (Ctrl+Shift+M)',
-      click: () => {
-        if (mainWindow) {
-          mainWindow.webContents.send('hotkey:toggle-mute');
-        }
+      {
+        label: 'Toggle Mute (Ctrl+Shift+M)',
+        click: () => {
+          if (mainWindow) {
+            mainWindow.webContents.send('hotkey:toggle-mute');
+          }
+        },
       },
-    },
-    {
-      label: 'Toggle Deafen (Ctrl+Shift+D)',
-      click: () => {
-        if (mainWindow) {
-          mainWindow.webContents.send('hotkey:toggle-deafen');
-        }
+      {
+        label: 'Toggle Deafen (Ctrl+Shift+D)',
+        click: () => {
+          if (mainWindow) {
+            mainWindow.webContents.send('hotkey:toggle-deafen');
+          }
+        },
       },
-    },
-    { type: 'separator' },
-    {
-      label: 'Quit SquadSpace',
-      click: () => {
-        isQuitting = true;
-        app.quit();
+      { type: 'separator' },
+      {
+        label: 'Quit SquadSpace',
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        },
       },
-    },
-  ]);
+    ]);
 
-  tray.setContextMenu(contextMenu);
+    tray.setContextMenu(contextMenu);
 
-  tray.on('double-click', () => {
-    if (mainWindow) {
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  });
+    tray.on('double-click', () => {
+      if (mainWindow) {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    });
+  } catch (err) {
+    console.warn('System tray registration note:', err.message);
+  }
 }
 
 function registerGlobalShortcuts() {
