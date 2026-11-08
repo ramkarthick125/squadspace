@@ -11,7 +11,70 @@ const {
   shell,
 } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const { spawn } = require('child_process');
 const coopHost = require('./coopHost.cjs');
+
+let inputHookProcess = null;
+
+function startInputHook() {
+  try {
+    const isPackaged = app.isPackaged;
+    const candidates = [
+      path.join(__dirname, 'native', 'InputHook.exe'),
+      path.join(process.resourcesPath || '', 'native', 'InputHook.exe'),
+      path.join(__dirname, '..', 'electron', 'native', 'InputHook.exe'),
+    ];
+
+    const exePath = candidates.find((p) => fs.existsSync(p));
+    if (!exePath) {
+      console.warn('[InputHook] Native hook executable not found, skipped.');
+      return;
+    }
+
+    inputHookProcess = spawn(exePath, [], {
+      stdio: ['pipe', 'pipe', 'ignore'],
+      windowsHide: true,
+    });
+
+    let buffer = '';
+    inputHookProcess.stdout.on('data', (chunk) => {
+      buffer += chunk.toString();
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line || line === 'HOOK_READY') continue;
+        const colonIdx = line.indexOf(':');
+        if (colonIdx !== -1) {
+          const action = line.slice(0, colonIdx); // DOWN or UP
+          const code = line.slice(colonIdx + 1);  // e.g. Mouse4, KeyT, ControlRight
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('hotkey:global-input', {
+              type: action === 'DOWN' ? 'down' : 'up',
+              code,
+            });
+          }
+        }
+      }
+    });
+
+    inputHookProcess.on('error', (err) => {
+      console.warn('[InputHook] Background process notice:', err.message);
+    });
+  } catch (err) {
+    console.warn('[InputHook] Init error:', err.message);
+  }
+}
+
+function stopInputHook() {
+  if (inputHookProcess) {
+    try {
+      inputHookProcess.kill();
+    } catch {}
+    inputHookProcess = null;
+  }
+}
 
 // Live Hosted Deployment URL (Discord-style remote auto-updating shell)
 const REMOTE_APP_URL = process.env.SQUADSPACE_REMOTE_URL || 'https://squadspace-flame.vercel.app';
@@ -168,8 +231,23 @@ function createMainWindow() {
     }
   });
 
-  // Cleanly quit application on close
-  mainWindow.on('close', () => {
+  // Cleanly quit application on close after giving renderer time to send leave & offline signals
+  let isClosing = false;
+  mainWindow.on('close', (e) => {
+    if (!isClosing && !isQuitting) {
+      e.preventDefault();
+      isClosing = true;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('app:before-quit');
+      }
+      setTimeout(() => {
+        isQuitting = true;
+        app.quit();
+      }, 500);
+    }
+  });
+
+  ipcMain.on('app:quit-confirmed', () => {
     isQuitting = true;
     app.quit();
   });
@@ -389,6 +467,7 @@ if (!gotTheLock) {
     createMainWindow();
     createTray();
     registerGlobalShortcuts();
+    startInputHook();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
@@ -397,6 +476,7 @@ if (!gotTheLock) {
 }
 
 app.on('will-quit', () => {
+  stopInputHook();
   coopHost.panicDisconnectAll();
   globalShortcut.unregisterAll();
 });

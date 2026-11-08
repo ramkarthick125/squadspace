@@ -73,11 +73,42 @@ export const realtimeService = {
                 serverStore.updateMember(m.id, { status: 'offline' });
               }
             });
+
+            // Automatically purge offline users from any active voice channel
+            const voiceStore = useVoiceStore.getState();
+            let changedVoice = false;
+            const newVoiceMap = { ...voiceStore.participantsByChannel };
+            Object.keys(newVoiceMap).forEach((cId) => {
+              const list = newVoiceMap[cId] || [];
+              const filtered = list.filter((p) => p.userId === currentUser.id || onlineUserIds.includes(p.userId));
+              if (filtered.length !== list.length) {
+                newVoiceMap[cId] = filtered;
+                changedVoice = true;
+              }
+            });
+            if (changedVoice) {
+              useVoiceStore.setState({ participantsByChannel: newVoiceMap });
+            }
           }
         })
         .on('presence', { event: 'leave' }, ({ key }) => {
           if (key && key !== currentUser.id) {
             useServerStore.getState().updateMember(key, { status: 'offline' });
+
+            // Instantly remove disconnected user from all voice channels
+            const voiceStore = useVoiceStore.getState();
+            let changedVoice = false;
+            const newVoiceMap = { ...voiceStore.participantsByChannel };
+            Object.keys(newVoiceMap).forEach((cId) => {
+              const list = newVoiceMap[cId] || [];
+              if (list.some((p) => p.userId === key)) {
+                newVoiceMap[cId] = list.filter((p) => p.userId !== key);
+                changedVoice = true;
+              }
+            });
+            if (changedVoice) {
+              useVoiceStore.setState({ participantsByChannel: newVoiceMap });
+            }
           }
         })
         .on('presence', { event: 'join' }, ({ key, newPresences }) => {
@@ -122,6 +153,10 @@ export const realtimeService = {
 
     const handleBeforeUnload = () => {
       try {
+        const voiceStore = useVoiceStore.getState();
+        if (voiceStore.activeVoiceChannelId) {
+          voiceStore.leaveVoiceChannel(currentUser);
+        }
         broadcastChannel?.untrack();
         if (broadcastChannel && supabase) supabase.removeChannel(broadcastChannel);
       } catch {}
@@ -130,10 +165,19 @@ export const realtimeService = {
       window.addEventListener('beforeunload', handleBeforeUnload);
     }
 
+    // Clean exit hook from native Electron window closing
+    const unbindQuit = (window as any).electronAPI?.onBeforeQuit?.(() => {
+      handleBeforeUnload();
+      setTimeout(() => {
+        (window as any).electronAPI?.confirmQuit?.();
+      }, 200);
+    });
+
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('beforeunload', handleBeforeUnload);
       }
+      if (unbindQuit) unbindQuit();
       if (localBroadcast) localBroadcast.close();
       if (broadcastChannel && supabase) supabase.removeChannel(broadcastChannel);
       if (inboxChannel && supabase) supabase.removeChannel(inboxChannel);

@@ -34,6 +34,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('hotkey:mouse-click', handler);
   },
 
+  // Global Low-Level Keyboard & Mouse Input (Full Background & In-Game Support)
+  onGlobalInput: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('hotkey:global-input', handler);
+    return () => ipcRenderer.removeListener('hotkey:global-input', handler);
+  },
+
+  // Graceful Application Exit Hooks
+  onBeforeQuit: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('app:before-quit', handler);
+    return () => ipcRenderer.removeListener('app:before-quit', handler);
+  },
+  confirmQuit: () => ipcRenderer.send('app:quit-confirmed'),
+
   // Deep Linking (squadspace://invite/sqd-xxx)
   onDeepLink: (callback) => {
     const handler = (_event, url) => callback(url);

@@ -41,13 +41,31 @@ let participantLeftUnsub: (() => void) | null = null;
 let participantUpdateUnsub: (() => void) | null = null;
 const playedJoinChimeUserIds = new Set<string>();
 
+const getInitialMuted = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem('squadspace_saved_muted') === 'true';
+  } catch {
+    return false;
+  }
+};
+
+const getInitialDeafened = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem('squadspace_saved_deafened') === 'true';
+  } catch {
+    return false;
+  }
+};
+
 export const useVoiceStore = create<VoiceState>((set, get) => ({
   activeVoiceChannelId: null,
   connectionState: 'disconnected',
   engineMode: 'p2p', // 100% Free direct P2P mesh by default
   streamQuality: '1080p-60', // 1080p @ 60 FPS 12 Mbps default
-  isMuted: false,
-  isDeafened: false,
+  isMuted: getInitialMuted(),
+  isDeafened: getInitialDeafened(),
   isScreenSharing: false,
   screenShareParticipantId: null,
   screenShareStream: null,
@@ -283,6 +301,10 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     const { isMuted, activeVoiceChannelId, participantsByChannel } = get();
     const newMuted = !isMuted;
 
+    try {
+      localStorage.setItem('squadspace_saved_muted', String(newMuted));
+    } catch {}
+
     webrtcManager.setMuted(newMuted);
 
     if (newMuted) {
@@ -317,6 +339,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   toggleDeafen: () => {
     const { isDeafened, activeVoiceChannelId, participantsByChannel } = get();
     const newDeafened = !isDeafened;
+
+    try {
+      localStorage.setItem('squadspace_saved_deafened', String(newDeafened));
+      if (newDeafened) {
+        localStorage.setItem('squadspace_saved_muted', 'true');
+      }
+    } catch {}
 
     webrtcManager.setDeafened(newDeafened);
 

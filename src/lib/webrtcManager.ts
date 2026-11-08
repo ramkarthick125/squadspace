@@ -150,13 +150,18 @@ class WebRTCManager {
     this.currentChannelId = channelId;
 
     try {
-      // 1. Request real microphone hardware access
+      // 1. Request real microphone hardware access with full acoustic echo cancellation
       this.localAudioStream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
+          echoCancellation: { ideal: true },
+          noiseSuppression: { ideal: true },
+          autoGainControl: { ideal: true },
+          googEchoCancellation: { ideal: true },
+          googAutoGainControl: { ideal: true },
+          googNoiseSuppression: { ideal: true },
+          googHighpassFilter: { ideal: true },
+          googTypingNoiseDetection: { ideal: true },
+        } as any,
         video: false,
       });
 
@@ -221,6 +226,12 @@ class WebRTCManager {
         customSoundData = parsed.dataUrl;
       }
     } catch {}
+
+    // Protect signaling connection from oversized payloads (>150KB)
+    if (customSoundData && customSoundData.length > 150000) {
+      console.warn('[WebRTC] Custom sound exceeds 150KB limit; trimmed version required for network broadcast.');
+      customSoundData = undefined;
+    }
 
     this.sendSignal({
       type: 'join',
@@ -769,6 +780,12 @@ class WebRTCManager {
           (this.remoteVoiceStreams.has(peerId) && this.remoteVoiceStreams.get(peerId)?.id !== stream.id);
 
         if (!isScreenAudio) {
+          // Never loop back user's own audio
+          if (peerId === this.myUserId) return;
+          if (this.localAudioStream && this.localAudioStream.getAudioTracks().some((t) => t.id === event.track.id)) {
+            return;
+          }
+
           this.remoteVoiceStreams.set(peerId, stream);
           let audioEl = this.remoteAudioElements.get(peerId);
           if (!audioEl) {

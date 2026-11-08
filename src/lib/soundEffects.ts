@@ -396,6 +396,8 @@ class SoundEffects {
     } catch {}
   }
 
+  private activeCustomAudio: HTMLAudioElement | null = null;
+
   /**
    * Sound: Play custom audio data URL (base64 string or blob URL)
    */
@@ -420,12 +422,19 @@ class SoundEffects {
         return;
       }
 
-      // Base64 or Blob audio element playback
-      const audio = new Audio(dataUrl);
+      if (this.activeCustomAudio) {
+        try {
+          this.activeCustomAudio.pause();
+          this.activeCustomAudio.src = '';
+        } catch {}
+      }
+
+      const audio = new Audio();
+      this.activeCustomAudio = audio;
+      audio.src = dataUrl;
       audio.volume = Math.min(1, Math.max(0, volume));
       audio.play().catch((err) => {
         console.warn('Custom join sound playback note:', err);
-        // Fallback to default pleasant chime
         this.playJoinVoice();
       });
     } catch {

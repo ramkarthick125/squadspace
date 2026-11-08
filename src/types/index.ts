@@ -140,6 +140,9 @@ export interface ElectronAPI {
   onToggleMute: (callback: () => void) => () => void;
   onToggleDeafen: (callback: () => void) => () => void;
   onAppCommandMouse?: (callback: (button: 'Mouse4' | 'Mouse5') => void) => () => void;
+  onBeforeQuit?: (callback: () => void) => () => void;
+  confirmQuit?: () => void;
+  onGlobalInput?: (callback: (data: { type: 'down' | 'up'; code: string }) => void) => () => void;
   onDeepLink: (callback: (url: string) => void) => () => void;
 
   // Co-op Remote Play

@@ -176,9 +176,9 @@ export function useGlobalKeybinds() {
       }
     };
 
-    // When window loses focus or Alt-Tab occurs, immediately release PTT to prevent stuck transmitting
+    // When window loses focus in web browser, release PTT (keep active in Electron for in-game global PTT)
     const handleWindowBlur = () => {
-      if (inputMode === 'push_to_talk' && isPttDownRef.current) {
+      if (inputMode === 'push_to_talk' && isPttDownRef.current && !window.electronAPI?.isElectron) {
         if (releaseTimeoutRef.current) clearTimeout(releaseTimeoutRef.current);
         isPttDownRef.current = false;
         setPttPressed(false);
@@ -186,6 +186,43 @@ export function useGlobalKeybinds() {
         sounds.playPttDeactivate();
       }
     };
+
+    // Global Low-Level OS Hook: Works in full-screen games, other apps, or anywhere on Windows!
+    const unbindGlobalInput = window.electronAPI?.onGlobalInput?.(({ type, code }) => {
+      if (inputMode !== 'push_to_talk' || !activeVoiceChannelId) return;
+
+      const target = keybinds.pushToTalk;
+      const isMatch =
+        code === target ||
+        code.toLowerCase() === target.toLowerCase() ||
+        (code.startsWith('Key') && target.toLowerCase() === code.slice(3).toLowerCase()) ||
+        (target.startsWith('Key') && code.toLowerCase() === target.slice(3).toLowerCase());
+
+      if (!isMatch) return;
+
+      if (type === 'down') {
+        if (releaseTimeoutRef.current) {
+          clearTimeout(releaseTimeoutRef.current);
+          releaseTimeoutRef.current = null;
+        }
+        if (!isPttDownRef.current) {
+          isPttDownRef.current = true;
+          setPttPressed(true);
+          webrtcManager.setPttActive(true);
+          sounds.playPttActivate();
+        }
+      } else if (type === 'up') {
+        if (isPttDownRef.current) {
+          if (releaseTimeoutRef.current) clearTimeout(releaseTimeoutRef.current);
+          releaseTimeoutRef.current = setTimeout(() => {
+            isPttDownRef.current = false;
+            setPttPressed(false);
+            webrtcManager.setPttActive(false);
+            sounds.playPttDeactivate();
+          }, Math.max(50, pttReleaseDelay));
+        }
+      }
+    });
 
     // Native Electron gaming mouse backward/forward command listener
     const unbindAppCommand = window.electronAPI?.onAppCommandMouse?.((mouseBtn) => {
@@ -226,6 +263,7 @@ export function useGlobalKeybinds() {
       window.removeEventListener('pointercancel', handleWindowBlur);
       window.removeEventListener('blur', handleWindowBlur);
       if (unbindAppCommand) unbindAppCommand();
+      if (unbindGlobalInput) unbindGlobalInput();
       if (releaseTimeoutRef.current) clearTimeout(releaseTimeoutRef.current);
     };
   }, [inputMode, keybinds, pttReleaseDelay, activeVoiceChannelId, toggleMute, toggleDeafen, setPttPressed]);

@@ -79,9 +79,10 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
       const v = videoRef.current;
       v.srcObject = stream;
       v.playbackRate = 1.0;
+      v.muted = isLocal ? true : isMuted;
       v.play().catch(() => {});
     }
-  }, [stream]);
+  }, [stream, isLocal, isMuted]);
 
   // Sync volume with video element
   useEffect(() => {

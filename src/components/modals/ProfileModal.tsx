@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Gamepad2, User, Lock, Sparkles, ShieldCheck, LogOut, Mic, Volume2, Keyboard, RotateCcw, Radio, Key, Music, Upload, Play } from 'lucide-react';
+import { X, Gamepad2, User, Lock, Sparkles, ShieldCheck, LogOut, Mic, Volume2, Keyboard, RotateCcw, Radio, Key, Music, Upload, Play, Scissors, Check, Loader2 } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { authService } from '../../lib/authService';
 import { useSettingsStore, formatKeyDisplay, KeybindConfig } from '../../store/useSettingsStore';
 import { sounds } from '../../lib/soundEffects';
+import { decodeAudioFile, trimAndEncodeAudio } from '../../lib/audioTrimmer';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -48,6 +49,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
     return { id: 'preset:default', name: 'Classic Chime (Default)', dataUrl: 'preset:default' };
   });
   const soundFileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadedAudioBuffer, setUploadedAudioBuffer] = useState<AudioBuffer | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState<string>('');
+  const [trimStartTime, setTrimStartTime] = useState<number>(0);
+  const [trimDuration, setTrimDuration] = useState<number>(2.5);
+  const [isProcessingAudio, setIsProcessingAudio] = useState<boolean>(false);
+  const [isAudioSaved, setIsAudioSaved] = useState<boolean>(false);
 
   const handleSelectSoundPreset = (presetId: string, name: string) => {
     const soundObj = { id: presetId, name, dataUrl: presetId };
@@ -56,27 +63,72 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
     sounds.playCustomSound(presetId);
   };
 
-  const handleSoundFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSoundFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 1.5 * 1024 * 1024) {
-      alert('Audio file must be under 1.5MB.');
-      return;
-    }
+    try {
+      setIsProcessingAudio(true);
+      const buffer = await decodeAudioFile(file);
+      setUploadedAudioBuffer(buffer);
+      const cleanName = file.name.replace(/\.[^/.]+$/, '');
+      setUploadedFileName(cleanName);
+      setTrimStartTime(0);
+      const initDuration = Math.min(2.5, buffer.duration);
+      setTrimDuration(initDuration);
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      const soundObj = { id: 'custom', name: file.name.replace(/\.[^/.]+$/, ''), dataUrl: result };
+      const trimmedDataUrl = await trimAndEncodeAudio(buffer, 0, initDuration);
+      const soundObj = {
+        id: 'custom',
+        name: `${cleanName} (0.0s - ${initDuration.toFixed(1)}s)`,
+        dataUrl: trimmedDataUrl,
+      };
       setCustomJoinSound(soundObj);
       localStorage.setItem('squadspace_custom_join_sound', JSON.stringify(soundObj));
-      sounds.playCustomSound(result);
-    };
-    reader.readAsDataURL(file);
+      sounds.playCustomSound(trimmedDataUrl);
+      setIsAudioSaved(true);
+      setTimeout(() => setIsAudioSaved(false), 3000);
+    } catch (err) {
+      console.error('Audio decode error:', err);
+      alert('Could not decode audio file. Please try another audio file.');
+    } finally {
+      setIsProcessingAudio(false);
+    }
+  };
+
+  const handlePreviewClip = async () => {
+    if (!uploadedAudioBuffer) return;
+    try {
+      const trimmedDataUrl = await trimAndEncodeAudio(uploadedAudioBuffer, trimStartTime, trimDuration);
+      sounds.playCustomSound(trimmedDataUrl);
+    } catch {}
+  };
+
+  const handleSaveClip = async () => {
+    if (!uploadedAudioBuffer) return;
+    try {
+      setIsProcessingAudio(true);
+      const trimmedDataUrl = await trimAndEncodeAudio(uploadedAudioBuffer, trimStartTime, trimDuration);
+      const soundObj = {
+        id: 'custom',
+        name: `${uploadedFileName} (${trimStartTime.toFixed(1)}s - ${(trimStartTime + trimDuration).toFixed(1)}s)`,
+        dataUrl: trimmedDataUrl,
+      };
+      setCustomJoinSound(soundObj);
+      localStorage.setItem('squadspace_custom_join_sound', JSON.stringify(soundObj));
+      sounds.playCustomSound(trimmedDataUrl);
+      setIsAudioSaved(true);
+      setTimeout(() => setIsAudioSaved(false), 3000);
+    } catch (err) {
+      console.error('Save trimmed clip error:', err);
+    } finally {
+      setIsProcessingAudio(false);
+    }
   };
 
   const handleResetSound = () => {
+    setUploadedAudioBuffer(null);
+    setUploadedFileName('');
     const defaultObj = { id: 'preset:default', name: 'Classic Chime (Default)', dataUrl: 'preset:default' };
     setCustomJoinSound(defaultObj);
     localStorage.setItem('squadspace_custom_join_sound', JSON.stringify(defaultObj));
@@ -207,6 +259,17 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
       }
     });
 
+    // Native Electron global background input listener for mouse buttons & keys
+    const unbindGlobalInput = window.electronAPI?.onGlobalInput?.(({ type, code }) => {
+      if (recordingKeybindFor && type === 'down') {
+        setKeybind(recordingKeybindFor, code);
+        if (recordingKeybindFor === 'pushToTalk') {
+          setInputMode('push_to_talk');
+        }
+        setRecordingKeybindFor(null);
+      }
+    });
+
     window.addEventListener('keydown', handleKeyRecord, { capture: true });
     window.addEventListener('mousedown', handleMouseRecord, { capture: true });
     window.addEventListener('pointerdown', handleMouseRecord, { capture: true });
@@ -221,6 +284,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
       window.removeEventListener('auxclick', handleMouseRecord, { capture: true });
       window.removeEventListener('contextmenu', handleContextMenu, { capture: true });
       if (unbindAppCommand) unbindAppCommand();
+      if (unbindGlobalInput) unbindGlobalInput();
     };
   }, [recordingKeybindFor, setKeybind, setInputMode]);
 
@@ -662,86 +726,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                       </button>
                     </div>
 
-                    {/* Quick presets for Gaming Mouse */}
-                    <div className="pt-1 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] text-discord-gray-400 mr-1 font-semibold">Quick Select:</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setKeybind('pushToTalk', 'Mouse4');
-                          setInputMode('push_to_talk');
-                          setRecordingKeybindFor(null);
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
-                          keybinds.pushToTalk === 'Mouse4'
-                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
-                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
-                        }`}
-                      >
-                        🖱️ Mouse 4 (Back)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setKeybind('pushToTalk', 'Mouse5');
-                          setInputMode('push_to_talk');
-                          setRecordingKeybindFor(null);
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
-                          keybinds.pushToTalk === 'Mouse5'
-                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
-                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
-                        }`}
-                      >
-                        🖱️ Mouse 5 (Forward)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setKeybind('pushToTalk', 'Mouse3');
-                          setInputMode('push_to_talk');
-                          setRecordingKeybindFor(null);
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
-                          keybinds.pushToTalk === 'Mouse3'
-                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
-                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
-                        }`}
-                      >
-                        Middle Click
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setKeybind('pushToTalk', 'ControlRight');
-                          setInputMode('push_to_talk');
-                          setRecordingKeybindFor(null);
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
-                          keybinds.pushToTalk === 'ControlRight'
-                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
-                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
-                        }`}
-                      >
-                        Right Ctrl
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setKeybind('pushToTalk', 'Backquote');
-                          setInputMode('push_to_talk');
-                          setRecordingKeybindFor(null);
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
-                          keybinds.pushToTalk === 'Backquote'
-                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
-                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
-                        }`}
-                      >
-                        ~ Tilde
-                      </button>
-                    </div>
-
                     {recordingKeybindFor === 'pushToTalk' && (
                       <p className="text-[11px] text-discord-yellow font-medium">
                         Press the key or mouse button (Mouse 4/5) you want to use for Push to Talk. Press Esc to cancel.
@@ -909,6 +893,133 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                         <span>Choose Audio File...</span>
                       </button>
                     </div>
+
+                    {/* Audio Trimmer / Part Selector */}
+                    {uploadedAudioBuffer && (
+                      <div className="pt-3 border-t border-discord-darkest/60 space-y-3 bg-[#1e1f22]/70 p-3.5 rounded-xl border border-[#2b2d31]">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Scissors className="w-4 h-4 text-discord-blurple-light" />
+                            <span className="text-xs font-bold text-white">Select Audio Part to Play</span>
+                          </div>
+                          <span className="text-[11px] font-mono text-discord-gray-400">
+                            Total: {uploadedAudioBuffer.duration.toFixed(1)}s
+                          </span>
+                        </div>
+
+                        {/* Start Time Slider */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-discord-gray-300 font-medium">Start Position</span>
+                            <span className="font-mono text-discord-blurple-light font-bold">
+                              {trimStartTime.toFixed(1)}s
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min="0"
+                            max={Math.max(0, Number((uploadedAudioBuffer.duration - trimDuration).toFixed(1)))}
+                            step="0.1"
+                            value={trimStartTime}
+                            onChange={(e) => {
+                              setTrimStartTime(Number(e.target.value));
+                              setIsAudioSaved(false);
+                            }}
+                            className="w-full accent-discord-blurple cursor-pointer"
+                          />
+                        </div>
+
+                        {/* Duration Selector */}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-discord-gray-300 font-medium">Chime Length</span>
+                            <span className="font-mono text-discord-green font-bold">{trimDuration.toFixed(1)}s</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {[1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0].map((dur) => (
+                              <button
+                                key={dur}
+                                type="button"
+                                onClick={() => {
+                                  setTrimDuration(Math.min(dur, uploadedAudioBuffer.duration));
+                                  if (trimStartTime + dur > uploadedAudioBuffer.duration) {
+                                    setTrimStartTime(Math.max(0, Number((uploadedAudioBuffer.duration - dur).toFixed(1))));
+                                  }
+                                  setIsAudioSaved(false);
+                                }}
+                                className={`px-2.5 py-1 rounded-md text-xs font-bold border transition cursor-pointer ${
+                                  trimDuration === dur
+                                    ? 'bg-discord-blurple text-white border-discord-blurple shadow'
+                                    : 'bg-[#2b2d31] hover:bg-[#35373c] text-discord-gray-300 border-[#383a40]'
+                                }`}
+                              >
+                                {dur.toFixed(1)}s
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Visual Timeline Scrub Bar */}
+                        <div className="pt-1">
+                          <div className="w-full h-3 bg-black/60 rounded-full overflow-hidden border border-white/10 relative">
+                            <div
+                              className="absolute top-0 bottom-0 bg-discord-blurple rounded-full shadow transition-all"
+                              style={{
+                                left: `${(trimStartTime / uploadedAudioBuffer.duration) * 100}%`,
+                                width: `${(trimDuration / uploadedAudioBuffer.duration) * 100}%`,
+                              }}
+                            />
+                          </div>
+                          <div className="flex justify-between text-[10px] text-discord-gray-400 font-mono mt-1">
+                            <span>0:00</span>
+                            <span className="text-white font-semibold">
+                              Clip: {trimStartTime.toFixed(1)}s → {(trimStartTime + trimDuration).toFixed(1)}s
+                            </span>
+                            <span>{uploadedAudioBuffer.duration.toFixed(1)}s</span>
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="pt-1 flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={handlePreviewClip}
+                            className="px-3 py-1.5 rounded-lg bg-[#2b2d31] hover:bg-[#35373c] border border-[#3f4147] text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Play className="w-3.5 h-3.5 fill-current" />
+                            <span>Preview Selection</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleSaveClip}
+                            disabled={isProcessingAudio}
+                            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                              isAudioSaved
+                                ? 'bg-discord-green text-white shadow-discord-green/30'
+                                : 'bg-discord-blurple hover:bg-discord-blurple-hover text-white shadow-discord-blurple/30'
+                            }`}
+                          >
+                            {isProcessingAudio ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>Encoding...</span>
+                              </>
+                            ) : isAudioSaved ? (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Saved & Applied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Apply As Join Chime</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -967,86 +1078,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                         {recordingKeybindFor === 'pushToTalk'
                           ? 'Click mouse or press key...'
                           : formatKeyDisplay(keybinds.pushToTalk)}
-                      </button>
-                    </div>
-
-                    {/* Quick presets for Gaming Mouse */}
-                    <div className="pt-1 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] text-discord-gray-400 mr-1 font-semibold">Quick Select:</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setKeybind('pushToTalk', 'Mouse4');
-                          setInputMode('push_to_talk');
-                          setRecordingKeybindFor(null);
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
-                          keybinds.pushToTalk === 'Mouse4'
-                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
-                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
-                        }`}
-                      >
-                        🖱️ Mouse 4 (Back)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setKeybind('pushToTalk', 'Mouse5');
-                          setInputMode('push_to_talk');
-                          setRecordingKeybindFor(null);
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
-                          keybinds.pushToTalk === 'Mouse5'
-                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
-                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
-                        }`}
-                      >
-                        🖱️ Mouse 5 (Forward)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setKeybind('pushToTalk', 'Mouse3');
-                          setInputMode('push_to_talk');
-                          setRecordingKeybindFor(null);
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
-                          keybinds.pushToTalk === 'Mouse3'
-                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
-                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
-                        }`}
-                      >
-                        Middle Click
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setKeybind('pushToTalk', 'ControlRight');
-                          setInputMode('push_to_talk');
-                          setRecordingKeybindFor(null);
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
-                          keybinds.pushToTalk === 'ControlRight'
-                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
-                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
-                        }`}
-                      >
-                        Right Ctrl
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setKeybind('pushToTalk', 'Backquote');
-                          setInputMode('push_to_talk');
-                          setRecordingKeybindFor(null);
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
-                          keybinds.pushToTalk === 'Backquote'
-                            ? 'bg-discord-blurple text-white border-discord-blurple shadow'
-                            : 'bg-discord-darkest hover:bg-discord-hover text-discord-gray-300 border-discord-darkest/80'
-                        }`}
-                      >
-                        ` (Tilde)
                       </button>
                     </div>
                   </div>
