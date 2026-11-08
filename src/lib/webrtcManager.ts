@@ -227,9 +227,9 @@ class WebRTCManager {
       }
     } catch {}
 
-    // Protect signaling connection from oversized payloads (>150KB)
-    if (customSoundData && customSoundData.length > 150000) {
-      console.warn('[WebRTC] Custom sound exceeds 150KB limit; trimmed version required for network broadcast.');
+    // Protect signaling connection from oversized payloads (>200KB)
+    if (customSoundData && customSoundData.length > 200000) {
+      console.warn('[WebRTC] Custom sound exceeds 200KB limit; trimmed version required for network broadcast.');
       customSoundData = undefined;
     }
 

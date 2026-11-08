@@ -212,6 +212,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
       setKeybind(recordingKeybindFor, combo);
       if (recordingKeybindFor === 'pushToTalk') {
         setInputMode('push_to_talk');
+        window.electronAPI?.setPttTarget?.(combo);
       }
       setRecordingKeybindFor(null);
     };
@@ -239,6 +240,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
       setKeybind(recordingKeybindFor, combo);
       if (recordingKeybindFor === 'pushToTalk') {
         setInputMode('push_to_talk');
+        window.electronAPI?.setPttTarget?.(combo);
       }
       setRecordingKeybindFor(null);
     };
@@ -254,6 +256,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
         setKeybind(recordingKeybindFor, mouseBtn);
         if (recordingKeybindFor === 'pushToTalk') {
           setInputMode('push_to_talk');
+          window.electronAPI?.setPttTarget?.(mouseBtn);
         }
         setRecordingKeybindFor(null);
       }
@@ -265,6 +268,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
         setKeybind(recordingKeybindFor, code);
         if (recordingKeybindFor === 'pushToTalk') {
           setInputMode('push_to_talk');
+          window.electronAPI?.setPttTarget?.(code);
         }
         setRecordingKeybindFor(null);
       }

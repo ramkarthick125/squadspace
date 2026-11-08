@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('hotkey:global-input', handler);
     return () => ipcRenderer.removeListener('hotkey:global-input', handler);
   },
+  setPttTarget: (targetKey) => ipcRenderer.send('hotkey:set-ptt-target', targetKey),
 
   // Graceful Application Exit Hooks
   onBeforeQuit: (callback) => {

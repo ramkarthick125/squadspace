@@ -18,10 +18,10 @@ export async function trimAndEncodeAudio(
   buffer: AudioBuffer,
   startSec: number,
   durationSec: number,
-  targetSampleRate = 22050
+  targetSampleRate = 16000
 ): Promise<string> {
-  const clampedStart = Math.max(0, Math.min(startSec, buffer.duration - 0.5));
-  const clampedDuration = Math.max(0.5, Math.min(durationSec, buffer.duration - clampedStart, 5.0));
+  const clampedStart = Math.max(0, Math.min(startSec, buffer.duration - 0.2));
+  const clampedDuration = Math.max(0.3, Math.min(durationSec, buffer.duration - clampedStart, 2.5));
   const targetLength = Math.floor(clampedDuration * targetSampleRate);
 
   // Render slice downsampled to mono targetSampleRate

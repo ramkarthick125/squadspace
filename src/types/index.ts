@@ -143,6 +143,7 @@ export interface ElectronAPI {
   onBeforeQuit?: (callback: () => void) => () => void;
   confirmQuit?: () => void;
   onGlobalInput?: (callback: (data: { type: 'down' | 'up'; code: string }) => void) => () => void;
+  setPttTarget?: (targetKey: string) => void;
   onDeepLink: (callback: (url: string) => void) => () => void;
 
   // Co-op Remote Play

@@ -31,6 +31,8 @@ interface VoiceState {
     options?: { systemAudio?: boolean; sourceId?: string }
   ) => Promise<void>;
   setSpeaking: (channelId: string, userId: string, isSpeaking: boolean) => void;
+  handlePeerJoinedChime: (peerId: string, customJoinSound?: string) => void;
+  handlePeerLeftChime: (peerId: string) => void;
 }
 
 let audioLevelUnsub: (() => void) | null = null;
@@ -74,6 +76,24 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
 
   setEngineMode: (engineMode) => set({ engineMode }),
   setStreamQuality: (streamQuality) => set({ streamQuality }),
+
+  handlePeerJoinedChime: (peerId: string, customJoinSound?: string) => {
+    if (get().isDeafened) return;
+    if (playedJoinChimeUserIds.has(peerId)) return;
+    playedJoinChimeUserIds.add(peerId);
+    if (customJoinSound) {
+      sounds.playCustomSound(customJoinSound);
+    } else {
+      sounds.playJoinVoice();
+    }
+  },
+
+  handlePeerLeftChime: (peerId: string) => {
+    playedJoinChimeUserIds.delete(peerId);
+    if (!get().isDeafened) {
+      sounds.playLeaveVoice();
+    }
+  },
 
   joinVoiceChannel: async (channelId, currentUser) => {
     const { activeVoiceChannelId, participantsByChannel, isMuted, isDeafened, engineMode } = get();
@@ -145,20 +165,15 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         // Only play join sound when a NEW user arrives (type === 'join'),
         // not for existing users announcing themselves on connect,
         // and only once per user session
-        if (isNewJoin && !playedJoinChimeUserIds.has(remoteUser.id)) {
-          playedJoinChimeUserIds.add(remoteUser.id);
-          if (customJoinSound) {
-            sounds.playCustomSound(customJoinSound);
-          } else {
-            sounds.playJoinVoice();
-          }
+        if (isNewJoin) {
+          get().handlePeerJoinedChime(remoteUser.id, customJoinSound);
         }
       }
     );
 
     if (participantLeftUnsub) participantLeftUnsub();
     participantLeftUnsub = webrtcManager.onParticipantLeft((peerId) => {
-      playedJoinChimeUserIds.delete(peerId);
+      get().handlePeerLeftChime(peerId);
       const { activeVoiceChannelId, participantsByChannel, screenShareParticipantId } = get();
       if (!activeVoiceChannelId) return;
 
@@ -174,7 +189,6 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
         newState.screenShareStream = null;
       }
       set(newState);
-      sounds.playLeaveVoice();
     });
 
     if (participantUpdateUnsub) participantUpdateUnsub();
@@ -229,10 +243,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     });
 
     // Play local entrance sound once: custom chime if set, otherwise default Discord join blip
+    let myCustomChime: string | undefined = undefined;
     try {
       const stored = localStorage.getItem('squadspace_custom_join_sound');
       const parsed = stored ? JSON.parse(stored) : null;
       if (parsed?.dataUrl) {
+        myCustomChime = parsed.dataUrl;
         sounds.playCustomSound(parsed.dataUrl);
       } else {
         sounds.playJoinVoice();
@@ -241,7 +257,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       sounds.playJoinVoice();
     }
 
-    realtimeService.broadcastVoiceState(channelId, currentUser, 'joined', isMuted);
+    realtimeService.broadcastVoiceState(
+      channelId,
+      currentUser,
+      'joined',
+      isMuted,
+      myCustomChime || 'preset:default'
+    );
     return true;
   },
 

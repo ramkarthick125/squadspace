@@ -12,68 +12,19 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
 const coopHost = require('./coopHost.cjs');
-
-let inputHookProcess = null;
+const nativeHotkey = require('./nativeHotkey.cjs');
 
 function startInputHook() {
-  try {
-    const isPackaged = app.isPackaged;
-    const candidates = [
-      path.join(__dirname, 'native', 'InputHook.exe'),
-      path.join(process.resourcesPath || '', 'native', 'InputHook.exe'),
-      path.join(__dirname, '..', 'electron', 'native', 'InputHook.exe'),
-    ];
-
-    const exePath = candidates.find((p) => fs.existsSync(p));
-    if (!exePath) {
-      console.warn('[InputHook] Native hook executable not found, skipped.');
-      return;
+  nativeHotkey.startPolling((data) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('hotkey:global-input', data);
     }
-
-    inputHookProcess = spawn(exePath, [], {
-      stdio: ['pipe', 'pipe', 'ignore'],
-      windowsHide: true,
-    });
-
-    let buffer = '';
-    inputHookProcess.stdout.on('data', (chunk) => {
-      buffer += chunk.toString();
-      const lines = buffer.split(/\r?\n/);
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line || line === 'HOOK_READY') continue;
-        const colonIdx = line.indexOf(':');
-        if (colonIdx !== -1) {
-          const action = line.slice(0, colonIdx); // DOWN or UP
-          const code = line.slice(colonIdx + 1);  // e.g. Mouse4, KeyT, ControlRight
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('hotkey:global-input', {
-              type: action === 'DOWN' ? 'down' : 'up',
-              code,
-            });
-          }
-        }
-      }
-    });
-
-    inputHookProcess.on('error', (err) => {
-      console.warn('[InputHook] Background process notice:', err.message);
-    });
-  } catch (err) {
-    console.warn('[InputHook] Init error:', err.message);
-  }
+  });
 }
 
 function stopInputHook() {
-  if (inputHookProcess) {
-    try {
-      inputHookProcess.kill();
-    } catch {}
-    inputHookProcess = null;
-  }
+  nativeHotkey.stopPolling();
 }
 
 // Live Hosted Deployment URL (Discord-style remote auto-updating shell)
@@ -377,6 +328,11 @@ ipcMain.on('window:close', () => {
 
 ipcMain.handle('window:isMaximized', () => {
   return mainWindow ? mainWindow.isMaximized() : false;
+});
+
+// Push-to-Talk Target Configuration
+ipcMain.on('hotkey:set-ptt-target', (_event, targetKey) => {
+  nativeHotkey.setPttTarget(targetKey);
 });
 
 // 2. Native Screen Capture Sources (The core upgrade!)

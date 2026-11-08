@@ -72,6 +72,13 @@ export function useGlobalKeybinds() {
     webrtcManager.updateAudioTrackState();
   }, [inputMode, activeVoiceChannelId]);
 
+  // Synchronize Push-to-Talk target keybind to Electron's native OS hook
+  useEffect(() => {
+    if (window.electronAPI?.setPttTarget && keybinds.pushToTalk) {
+      window.electronAPI.setPttTarget(keybinds.pushToTalk);
+    }
+  }, [keybinds.pushToTalk]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't intercept if user is typing in a text field (unless it's a pure modifier like CtrlRight)

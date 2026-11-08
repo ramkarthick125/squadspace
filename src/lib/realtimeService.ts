@@ -299,7 +299,7 @@ export const realtimeService = {
 
       // 6. Voice Channel Presence & State
       case 'voice_state': {
-        const { channelId, user, action, isMuted } = payload;
+        const { channelId, user, action, isMuted, customJoinSound } = payload;
         const voiceStore = useVoiceStore.getState();
         const currentByChannel = { ...voiceStore.participantsByChannel };
         const list = currentByChannel[channelId] || [];
@@ -320,9 +320,18 @@ export const realtimeService = {
             ];
             useVoiceStore.setState({ participantsByChannel: currentByChannel });
           }
+
+          // If this user joined our current active voice channel, play their entrance chime!
+          if (voiceStore.activeVoiceChannelId === channelId) {
+            voiceStore.handlePeerJoinedChime(user.id, customJoinSound);
+          }
         } else if (action === 'left') {
           currentByChannel[channelId] = list.filter((p) => p.userId !== user.id);
           useVoiceStore.setState({ participantsByChannel: currentByChannel });
+
+          if (voiceStore.activeVoiceChannelId === channelId) {
+            voiceStore.handlePeerLeftChime(user.id);
+          }
         } else if (action === 'muted') {
           currentByChannel[channelId] = list.map((p) =>
             p.userId === user.id ? { ...p, isMuted: Boolean(isMuted) } : p
@@ -433,7 +442,13 @@ export const realtimeService = {
     });
   },
 
-  broadcastVoiceState(channelId: string, user: UserProfile, action: 'joined' | 'left' | 'muted', isMuted?: boolean) {
+  broadcastVoiceState(
+    channelId: string,
+    user: UserProfile,
+    action: 'joined' | 'left' | 'muted',
+    isMuted?: boolean,
+    customJoinSound?: string
+  ) {
     this.sendUniversalPayload({
       type: 'voice_state',
       senderId: user.id,
@@ -441,6 +456,7 @@ export const realtimeService = {
       user,
       action,
       isMuted,
+      customJoinSound,
     });
   },
 
