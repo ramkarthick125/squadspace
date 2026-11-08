@@ -70,8 +70,8 @@ export const CoopJoinModal: React.FC<CoopJoinModalProps> = ({
             <div>
               <h3 className="font-bold text-white text-base flex items-center gap-2">
                 Co-op Remote Play
-                <span className="text-[10px] font-semibold bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30">
-                  Parsec Style
+                <span className="text-[10px] font-semibold bg-discord-blurple/20 text-discord-blurple-light px-2 py-0.5 rounded-full border border-discord-blurple/30">
+                  Direct Input
                 </span>
               </h3>
               <p className="text-xs text-zinc-400">Play multiplayer games with {hostName}</p>

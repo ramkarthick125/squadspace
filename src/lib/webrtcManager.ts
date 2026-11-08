@@ -17,6 +17,7 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 import { SCREEN_SHARE_PRESETS, ScreenSharePreset } from './livekit';
 import { UserProfile, VoiceParticipant } from '../types';
 import { useSettingsStore } from '../store/useSettingsStore';
+import { sounds } from './soundEffects';
 
 export interface PeerConnectionInfo {
   peerId: string;
@@ -26,7 +27,12 @@ export interface PeerConnectionInfo {
 }
 
 type AudioLevelCallback = (volumePercent: number, isSpeaking: boolean) => void;
-type ParticipantJoinedCallback = (user: UserProfile, isMuted?: boolean, isScreenSharing?: boolean) => void;
+type ParticipantJoinedCallback = (
+  user: UserProfile,
+  isMuted?: boolean,
+  isScreenSharing?: boolean,
+  customJoinSound?: string
+) => void;
 type ParticipantLeftCallback = (userId: string) => void;
 type ParticipantUpdateCallback = (userId: string, updates: Partial<VoiceParticipant>) => void;
 
@@ -193,7 +199,24 @@ class WebRTCManager {
     setTimeout(() => this.broadcastJoin(), 600);
     setTimeout(() => this.broadcastJoin(), 1500);
 
-    // 5. Periodic presence heartbeat (every 4 seconds) to guarantee sync across users
+    // 5. Play entrance chime (user's custom audio or default)
+    try {
+      const stored = localStorage.getItem('squadspace_custom_join_sound');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.dataUrl) {
+          sounds.playCustomSound(parsed.dataUrl);
+        } else {
+          sounds.playJoinVoice();
+        }
+      } else {
+        sounds.playJoinVoice();
+      }
+    } catch {
+      sounds.playJoinVoice();
+    }
+
+    // 6. Periodic presence heartbeat (every 4 seconds) to guarantee sync across users
     if (this.presenceHeartbeatInterval) {
       clearInterval(this.presenceHeartbeatInterval);
     }
@@ -206,6 +229,15 @@ class WebRTCManager {
 
   private broadcastJoin() {
     if (!this.currentChannelId || !this.currentUser) return;
+    let customSoundData: string | undefined = undefined;
+    try {
+      const stored = localStorage.getItem('squadspace_custom_join_sound');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        customSoundData = parsed.dataUrl;
+      }
+    } catch {}
+
     this.sendSignal({
       type: 'join',
       senderId: this.myUserId,
@@ -213,6 +245,7 @@ class WebRTCManager {
       user: this.currentUser,
       isMuted: this.isMuted,
       isScreenSharing: Boolean(this.localScreenStream),
+      customJoinSound: customSoundData,
     });
   }
 
@@ -315,12 +348,19 @@ class WebRTCManager {
     this.currentScreenBitrate = preset.maxBitrate;
 
     try {
-      let stream: MediaStream | null = null;
+      // 0. Cleanly teardown any prior active screen stream before re-acquiring
+      if (this.localScreenStream) {
+        this.stopScreenShare();
+      }
 
-      if (options?.sourceId) {
+      let stream: MediaStream | null = null;
+      const isElectron = Boolean(window.electronAPI?.isElectron);
+
+      // 1. Electron Native Desktop Capture (Only when running in Electron with a specific sourceId)
+      if (isElectron && options?.sourceId) {
         const isScreenSource = options.sourceId.startsWith('screen:');
 
-        // 1. Try native capture with system audio (only on whole screens, Windows limitation for window loopback)
+        // Native capture with system audio (only on whole screens in Windows)
         if (options?.systemAudio !== false && isScreenSource) {
           try {
             stream = await navigator.mediaDevices.getUserMedia({
@@ -340,11 +380,11 @@ class WebRTCManager {
               },
             } as any);
           } catch (audioErr) {
-            console.warn('[ScreenShare] Capture with audio failed, falling back to video-only:', audioErr);
+            console.warn('[ScreenShare] Native capture with audio failed, falling back to video-only:', audioErr);
           }
         }
 
-        // 2. Try native capture video-only if audio failed or was not requested
+        // Native capture video-only if audio failed or was not requested
         if (!stream) {
           try {
             stream = await navigator.mediaDevices.getUserMedia({
@@ -365,16 +405,19 @@ class WebRTCManager {
         }
       }
 
-      // 3. Fallback to standard getDisplayMedia (Web or if native source capture failed)
+      // 2. Standard getDisplayMedia (Web or if Electron native capture was not specified/failed)
+      // Must execute promptly to preserve user gesture token in modern browsers!
       if (!stream) {
+        const displayVideoConstraints: MediaTrackConstraints = {
+          frameRate: { ideal: preset.frameRate, max: preset.frameRate },
+          width: { ideal: preset.resolution.width },
+          height: { ideal: preset.resolution.height },
+        };
+
         if (options?.systemAudio !== false) {
           try {
             stream = await navigator.mediaDevices.getDisplayMedia({
-              video: {
-                frameRate: { ideal: preset.frameRate, max: preset.frameRate },
-                width: { ideal: preset.resolution.width, max: preset.resolution.width },
-                height: { ideal: preset.resolution.height, max: preset.resolution.height },
-              },
+              video: displayVideoConstraints,
               audio: {
                 echoCancellation: false,
                 noiseSuppression: false,
@@ -387,14 +430,19 @@ class WebRTCManager {
         }
 
         if (!stream) {
-          stream = await navigator.mediaDevices.getDisplayMedia({
-            video: {
-              frameRate: { ideal: preset.frameRate, max: preset.frameRate },
-              width: { ideal: preset.resolution.width, max: preset.resolution.width },
-              height: { ideal: preset.resolution.height, max: preset.resolution.height },
-            },
-            audio: false,
-          });
+          try {
+            stream = await navigator.mediaDevices.getDisplayMedia({
+              video: displayVideoConstraints,
+              audio: false,
+            });
+          } catch (dispErr) {
+            // Final fallback with minimal unconstrained video
+            console.warn('[ScreenShare] Retrying with unconstrained video:', dispErr);
+            stream = await navigator.mediaDevices.getDisplayMedia({
+              video: true,
+              audio: false,
+            });
+          }
         }
       }
 
@@ -858,7 +906,7 @@ class WebRTCManager {
         // A peer joined or is present in our voice channel
         if (data.user) {
           this.onParticipantJoinedCallbacks.forEach((cb) =>
-            cb(data.user, data.isMuted, data.isScreenSharing)
+            cb(data.user, data.isMuted, data.isScreenSharing, data.customJoinSound)
           );
         }
 
@@ -878,6 +926,13 @@ class WebRTCManager {
         // Perfect negotiation rule: peer with smaller id creates the offer
         if (!this.peers.has(data.senderId) && this.myUserId < data.senderId) {
           await this.createAndSendOffer(data.senderId);
+        }
+        break;
+      }
+
+      case 'custom-join-sound': {
+        if (data.soundData && data.senderId !== this.myUserId) {
+          sounds.playCustomSound(data.soundData);
         }
         break;
       }

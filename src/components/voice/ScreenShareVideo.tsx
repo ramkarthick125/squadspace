@@ -232,15 +232,15 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
               }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs shadow-lg transition cursor-pointer border ${
                 isCoopHost
-                  ? 'bg-indigo-600 border-indigo-400 text-white shadow-indigo-600/40'
-                  : 'bg-indigo-600/30 hover:bg-indigo-600 border-indigo-500/40 text-indigo-200 hover:text-white'
+                  ? 'bg-discord-blurple border-discord-blurple-light text-white shadow-discord-blurple/30'
+                  : 'bg-[#2b2d31] hover:bg-[#35373c] border-[#3f4147] text-discord-gray-200 hover:text-white'
               }`}
             >
-              <Gamepad2 className="w-4 h-4" />
+              <Gamepad2 className="w-4 h-4 text-discord-blurple-light" />
               <span>
                 {isCoopHost
-                  ? `Co-op Active (${players.length} Players)`
-                  : '🎮 Enable Co-op Play'}
+                  ? `Co-op Active (${players.length})`
+                  : 'Enable Co-op'}
               </span>
               {pendingRequests.length > 0 && (
                 <span className="w-4 h-4 rounded-full bg-amber-400 text-black text-[10px] font-bold flex items-center justify-center animate-bounce">
@@ -281,10 +281,10 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
                 <button
                   type="button"
                   onClick={() => (onOpenJoinModal ? onOpenJoinModal() : setIsJoinModalOpen(true))}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition cursor-pointer border border-indigo-400/30"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs bg-discord-blurple hover:bg-discord-blurple-hover text-white shadow-lg shadow-discord-blurple/30 transition cursor-pointer border border-discord-blurple-light/30"
                 >
                   <Gamepad2 className="w-4 h-4" />
-                  <span>🎮 Join Game (Co-op)</span>
+                  <span>Join Co-op</span>
                 </button>
               )}
             </div>

@@ -147,15 +147,15 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
                 }}
                 className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition shadow cursor-pointer border ${
                   isCoopHost
-                    ? 'bg-indigo-600 border-indigo-400 text-white shadow-indigo-600/40'
-                    : 'bg-indigo-600/30 hover:bg-indigo-600 border-indigo-500/40 text-indigo-200 hover:text-white'
+                    ? 'bg-discord-blurple border-discord-blurple-light text-white shadow-discord-blurple/30'
+                    : 'bg-[#2b2d31] hover:bg-[#35373c] border-[#3f4147] text-discord-gray-200 hover:text-white'
                 }`}
               >
-                <Gamepad2 className="w-4 h-4" />
+                <Gamepad2 className="w-4 h-4 text-discord-blurple-light" />
                 <span>
                   {isCoopHost
                     ? `Co-op Active (${players.length})`
-                    : '🎮 Enable Co-op Play'}
+                    : 'Enable Co-op'}
                 </span>
                 {pendingRequests.length > 0 && (
                   <span className="w-4 h-4 rounded-full bg-amber-400 text-black text-[10px] font-bold flex items-center justify-center animate-bounce">
@@ -167,19 +167,19 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
               <button
                 type="button"
                 onClick={() => setIsJoinModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow transition cursor-pointer border border-indigo-400/40"
+                className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-discord-blurple hover:bg-discord-blurple-hover text-white shadow transition cursor-pointer border border-discord-blurple-light/40"
               >
                 <Gamepad2 className="w-4 h-4" />
-                <span>{mySlot ? `Playing as P${mySlot}` : '🎮 Play Co-op (Join)'}</span>
+                <span>{mySlot ? `Playing as P${mySlot}` : 'Join Co-op'}</span>
               </button>
             ) : (
               <button
                 type="button"
                 onClick={() => setIsScreenShareModalOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-600/20 hover:bg-indigo-600 border border-indigo-500/30 text-indigo-200 hover:text-white shadow transition cursor-pointer"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-[#2b2d31] hover:bg-[#35373c] border border-[#3f4147] text-discord-gray-300 hover:text-white shadow transition cursor-pointer"
               >
-                <Gamepad2 className="w-4 h-4 text-indigo-300" />
-                <span>🎮 Co-op Remote Play</span>
+                <Gamepad2 className="w-4 h-4 text-discord-blurple-light" />
+                <span>Co-op Remote Play</span>
               </button>
             )}
 
@@ -444,23 +444,23 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
                   title="Co-op Remote Play (Virtual Xbox Controllers & Keyboard Injection)"
                   className={`px-4 h-12 rounded-full flex items-center gap-2 font-bold text-xs transition-all cursor-pointer shadow-lg border ml-1 ${
                     isCoopHost || isCoopActive
-                      ? 'bg-gradient-to-r from-indigo-600 to-purple-600 border-indigo-400 text-white shadow-indigo-600/40 animate-pulse'
+                      ? 'bg-discord-blurple border-discord-blurple-light text-white shadow-discord-blurple/30 animate-pulse'
                       : isScreenSharing
-                      ? 'bg-indigo-600/40 hover:bg-indigo-600 border-indigo-500/50 text-indigo-100 hover:text-white'
+                      ? 'bg-[#2b2d31] hover:bg-[#35373c] border-[#3f4147] text-discord-gray-200 hover:text-white'
                       : screenSharingParticipant
-                      ? 'bg-indigo-600 hover:bg-indigo-500 border-indigo-400 text-white shadow-indigo-600/30'
-                      : 'bg-[#2b2d31] hover:bg-indigo-600/40 border-[#383a40] text-discord-gray-200 hover:text-white'
+                      ? 'bg-discord-blurple hover:bg-discord-blurple-hover border-discord-blurple-light text-white shadow-discord-blurple/30'
+                      : 'bg-[#2b2d31] hover:bg-[#35373c] border-[#383a40] text-discord-gray-200 hover:text-white'
                   }`}
                 >
-                  <Gamepad2 className="w-5 h-5 text-indigo-300" />
+                  <Gamepad2 className="w-5 h-5 text-discord-blurple-light" />
                   <span>
                     {isScreenSharing
                       ? isCoopHost
-                        ? `Co-op Host (${players.length} Players)`
-                        : '🎮 Enable Co-op'
+                        ? `Co-op Host (${players.length})`
+                        : 'Enable Co-op'
                       : screenSharingParticipant
-                      ? '🎮 Join Co-op Game'
-                      : '🎮 Co-op Remote Play'}
+                      ? 'Join Co-op'
+                      : 'Co-op Remote Play'}
                   </span>
                   {pendingRequests.length > 0 && (
                     <span className="w-5 h-5 rounded-full bg-amber-400 text-black text-[11px] font-extrabold flex items-center justify-center animate-bounce shadow">

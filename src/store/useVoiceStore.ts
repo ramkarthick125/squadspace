@@ -96,7 +96,7 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     });
 
     if (participantJoinedUnsub) participantJoinedUnsub();
-    participantJoinedUnsub = webrtcManager.onParticipantJoined((remoteUser, remoteMuted, remoteScreen) => {
+    participantJoinedUnsub = webrtcManager.onParticipantJoined((remoteUser, remoteMuted, remoteScreen, customJoinSound) => {
       const { activeVoiceChannelId, participantsByChannel } = get();
       if (!activeVoiceChannelId) return;
 
@@ -118,7 +118,12 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
             [activeVoiceChannelId]: [...currentList, newRemoteP],
           },
         });
-        sounds.playJoinVoice();
+
+        if (customJoinSound) {
+          sounds.playCustomSound(customJoinSound);
+        } else {
+          sounds.playJoinVoice();
+        }
       }
     });
 

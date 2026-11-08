@@ -307,6 +307,131 @@ class SoundEffects {
       osc.stop(now + 0.09);
     } catch {}
   }
+
+  /**
+   * Sound: Retro Arcade Chime Preset
+   */
+  playRetroArcade() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const notes = [587.33, 880, 1174.66, 1760]; // D5, A5, D6, A6
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.06);
+        gain.gain.setValueAtTime(0.08, now + idx * 0.06);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.06 + 0.08);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + idx * 0.06);
+        osc.stop(now + idx * 0.06 + 0.08);
+      });
+    } catch {}
+  }
+
+  /**
+   * Sound: Cyberpunk Synth Chime Preset
+   */
+  playCyberpunkSynth() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const filter = ctx.createBiquadFilter();
+      const gain = ctx.createGain();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(220, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.25);
+
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(600, now);
+      filter.frequency.exponentialRampToValueAtTime(3200, now + 0.2);
+
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.14, now + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.4);
+    } catch {}
+  }
+
+  /**
+   * Sound: Victory Fanfare Preset
+   */
+  playVictoryFanfare() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const notes = [
+        { f: 523.25, d: 0.1 },  // C5
+        { f: 659.25, d: 0.1 },  // E5
+        { f: 783.99, d: 0.1 },  // G5
+        { f: 1046.50, d: 0.25 }, // C6
+      ];
+      let offset = 0;
+      notes.forEach(({ f, d }) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(f, now + offset);
+        gain.gain.setValueAtTime(0.12, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + offset + d);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + offset);
+        osc.stop(now + offset + d);
+        offset += d * 0.75;
+      });
+    } catch {}
+  }
+
+  /**
+   * Sound: Play custom audio data URL (base64 string or blob URL)
+   */
+  playCustomSound(dataUrl: string, volume = 0.5) {
+    if (!dataUrl) return;
+    try {
+      // Check for built-in preset prefixes
+      if (dataUrl === 'preset:default') {
+        this.playJoinVoice();
+        return;
+      }
+      if (dataUrl === 'preset:retro') {
+        this.playRetroArcade();
+        return;
+      }
+      if (dataUrl === 'preset:cyberpunk') {
+        this.playCyberpunkSynth();
+        return;
+      }
+      if (dataUrl === 'preset:fanfare') {
+        this.playVictoryFanfare();
+        return;
+      }
+
+      // Base64 or Blob audio element playback
+      const audio = new Audio(dataUrl);
+      audio.volume = Math.min(1, Math.max(0, volume));
+      audio.play().catch((err) => {
+        console.warn('Custom join sound playback note:', err);
+        // Fallback to default pleasant chime
+        this.playJoinVoice();
+      });
+    } catch {
+      this.playJoinVoice();
+    }
+  }
 }
 
 export const sounds = new SoundEffects();

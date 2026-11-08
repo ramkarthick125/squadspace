@@ -57,9 +57,36 @@ export const realtimeService = {
             const onlineUserIds = Object.keys(state);
             const serverStore = useServerStore.getState();
             serverStore.members.forEach((m) => {
-              if (onlineUserIds.includes(m.id) && m.status === 'offline') {
-                serverStore.updateMember(m.id, { status: 'online' });
+              if (m.id === currentUser.id) return; // Keep local user status controlled by user
+              if (onlineUserIds.includes(m.id)) {
+                const presenceList = state[m.id];
+                const latestPresence = presenceList && presenceList[0] as any;
+                const activeStatus = latestPresence?.status || 'online';
+                if (m.status !== activeStatus) {
+                  serverStore.updateMember(m.id, {
+                    status: activeStatus,
+                    customStatus: latestPresence?.customStatus ?? m.customStatus,
+                    gamingActivity: latestPresence?.gamingActivity ?? m.gamingActivity,
+                  });
+                }
+              } else if (m.status !== 'offline') {
+                serverStore.updateMember(m.id, { status: 'offline' });
               }
+            });
+          }
+        })
+        .on('presence', { event: 'leave' }, ({ key }) => {
+          if (key && key !== currentUser.id) {
+            useServerStore.getState().updateMember(key, { status: 'offline' });
+          }
+        })
+        .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+          if (key && key !== currentUser.id && newPresences && newPresences[0]) {
+            const pres = newPresences[0] as any;
+            useServerStore.getState().updateMember(key, {
+              status: pres.status || 'online',
+              customStatus: pres.customStatus,
+              gamingActivity: pres.gamingActivity,
             });
           }
         })
@@ -93,7 +120,20 @@ export const realtimeService = {
       console.warn('Personal inbox setup note:', err);
     }
 
+    const handleBeforeUnload = () => {
+      try {
+        broadcastChannel?.untrack();
+        if (broadcastChannel && supabase) supabase.removeChannel(broadcastChannel);
+      } catch {}
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('beforeunload', handleBeforeUnload);
+    }
+
     return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+      }
       if (localBroadcast) localBroadcast.close();
       if (broadcastChannel && supabase) supabase.removeChannel(broadcastChannel);
       if (inboxChannel && supabase) supabase.removeChannel(inboxChannel);

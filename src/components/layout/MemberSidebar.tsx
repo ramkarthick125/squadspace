@@ -11,7 +11,7 @@ interface MemberSidebarProps {
 }
 
 export const MemberSidebar: React.FC<MemberSidebarProps> = ({ onSelectMember }) => {
-  const { members } = useServerStore();
+  const { members, channels } = useServerStore();
   const { currentUser } = useAuthStore();
   const { participantsByChannel } = useVoiceStore();
   const { startOrOpenDM, setActiveConversation } = useDMStore();
@@ -34,7 +34,9 @@ export const MemberSidebar: React.FC<MemberSidebarProps> = ({ onSelectMember }) 
   const getConnectedVoiceChannelName = (userId: string) => {
     for (const [channelId, participants] of Object.entries(participantsByChannel)) {
       if (participants.some((p) => p.userId === userId)) {
-        return channelId.replace('vc-', '').toUpperCase() + ' VC';
+        const found = channels.find((c) => c.id === channelId);
+        if (found) return found.name;
+        return 'Voice Channel';
       }
     }
     return null;

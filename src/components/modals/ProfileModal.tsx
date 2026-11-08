@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Gamepad2, User, Lock, Sparkles, ShieldCheck, LogOut, Mic, Volume2, Keyboard, RotateCcw, Radio, Key } from 'lucide-react';
+import { X, Gamepad2, User, Lock, Sparkles, ShieldCheck, LogOut, Mic, Volume2, Keyboard, RotateCcw, Radio, Key, Music, Upload, Play } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
 import { authService } from '../../lib/authService';
 import { useSettingsStore, formatKeyDisplay, KeybindConfig } from '../../store/useSettingsStore';
+import { sounds } from '../../lib/soundEffects';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -37,6 +38,50 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
   const [passwordStatusMsg, setPasswordStatusMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
+
+  // Custom Voice Join Sound (Entrance Chime) State
+  const [customJoinSound, setCustomJoinSound] = useState<{ id: string; name: string; dataUrl: string } | null>(() => {
+    try {
+      const stored = localStorage.getItem('squadspace_custom_join_sound');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return { id: 'preset:default', name: 'Classic Chime (Default)', dataUrl: 'preset:default' };
+  });
+  const soundFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSelectSoundPreset = (presetId: string, name: string) => {
+    const soundObj = { id: presetId, name, dataUrl: presetId };
+    setCustomJoinSound(soundObj);
+    localStorage.setItem('squadspace_custom_join_sound', JSON.stringify(soundObj));
+    sounds.playCustomSound(presetId);
+  };
+
+  const handleSoundFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 1.5 * 1024 * 1024) {
+      alert('Audio file must be under 1.5MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const soundObj = { id: 'custom', name: file.name.replace(/\.[^/.]+$/, ''), dataUrl: result };
+      setCustomJoinSound(soundObj);
+      localStorage.setItem('squadspace_custom_join_sound', JSON.stringify(soundObj));
+      sounds.playCustomSound(result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleResetSound = () => {
+    const defaultObj = { id: 'preset:default', name: 'Classic Chime (Default)', dataUrl: 'preset:default' };
+    setCustomJoinSound(defaultObj);
+    localStorage.setItem('squadspace_custom_join_sound', JSON.stringify(defaultObj));
+    sounds.playCustomSound('preset:default');
+  };
 
   const handleUpdatePassword = async () => {
     setPasswordStatusMsg(null);
@@ -165,12 +210,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
     window.addEventListener('keydown', handleKeyRecord, { capture: true });
     window.addEventListener('mousedown', handleMouseRecord, { capture: true });
     window.addEventListener('pointerdown', handleMouseRecord, { capture: true });
+    window.addEventListener('mouseup', handleMouseRecord, { capture: true });
     window.addEventListener('auxclick', handleMouseRecord, { capture: true });
     window.addEventListener('contextmenu', handleContextMenu, { capture: true });
     return () => {
       window.removeEventListener('keydown', handleKeyRecord, { capture: true });
       window.removeEventListener('mousedown', handleMouseRecord, { capture: true });
       window.removeEventListener('pointerdown', handleMouseRecord, { capture: true });
+      window.removeEventListener('mouseup', handleMouseRecord, { capture: true });
       window.removeEventListener('auxclick', handleMouseRecord, { capture: true });
       window.removeEventListener('contextmenu', handleContextMenu, { capture: true });
       if (unbindAppCommand) unbindAppCommand();
@@ -623,6 +670,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                         onClick={() => {
                           setKeybind('pushToTalk', 'Mouse4');
                           setInputMode('push_to_talk');
+                          setRecordingKeybindFor(null);
                         }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'Mouse4'
@@ -637,6 +685,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                         onClick={() => {
                           setKeybind('pushToTalk', 'Mouse5');
                           setInputMode('push_to_talk');
+                          setRecordingKeybindFor(null);
                         }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'Mouse5'
@@ -651,6 +700,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                         onClick={() => {
                           setKeybind('pushToTalk', 'Mouse3');
                           setInputMode('push_to_talk');
+                          setRecordingKeybindFor(null);
                         }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'Mouse3'
@@ -665,6 +715,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                         onClick={() => {
                           setKeybind('pushToTalk', 'ControlRight');
                           setInputMode('push_to_talk');
+                          setRecordingKeybindFor(null);
                         }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'ControlRight'
@@ -679,6 +730,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                         onClick={() => {
                           setKeybind('pushToTalk', 'Backquote');
                           setInputMode('push_to_talk');
+                          setRecordingKeybindFor(null);
                         }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'Backquote'
@@ -767,6 +819,99 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                   </div>
                 </div>
 
+                {/* Custom Voice Join Sound (Entrance Chime) */}
+                <div>
+                  <h3 className="text-sm font-bold text-discord-gray-200 uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <Music className="w-4 h-4 text-discord-blurple-light" />
+                    <span>Voice Entrance Chime</span>
+                  </h3>
+                  <p className="text-xs text-discord-gray-400 mb-4">
+                    Plays whenever you connect to a voice channel so others instantly recognize your entrance!
+                  </p>
+
+                  <div className="bg-discord-sidebar p-4 rounded-xl border border-discord-darkest space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-discord-gray-300">Active Sound:</span>
+                        <span className="text-xs font-bold text-white bg-[#2b2d31] px-2.5 py-1 rounded-md border border-[#3f4147]">
+                          {customJoinSound?.name || 'Classic Chime (Default)'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => sounds.playCustomSound(customJoinSound?.dataUrl || 'preset:default')}
+                          className="px-3 py-1.5 rounded-lg bg-discord-blurple/20 hover:bg-discord-blurple border border-discord-blurple/40 text-discord-blurple-light hover:text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                          <span>Preview</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleResetSound}
+                          title="Reset to default chime"
+                          className="p-1.5 rounded-lg bg-discord-darkest hover:bg-discord-hover text-discord-gray-400 hover:text-white border border-[#3f4147] transition cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Presets Grid */}
+                    <div>
+                      <span className="text-[11px] font-bold text-discord-gray-400 uppercase tracking-wider block mb-2">
+                        Preset Chimes
+                      </span>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          { id: 'preset:default', label: 'Classic Chime' },
+                          { id: 'preset:retro', label: 'Retro Arcade' },
+                          { id: 'preset:cyberpunk', label: 'Cyber Synth' },
+                          { id: 'preset:fanfare', label: 'Victory Fanfare' },
+                        ].map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => handleSelectSoundPreset(p.id, p.label)}
+                            className={`py-2 px-2.5 rounded-lg border text-center transition cursor-pointer text-xs font-semibold ${
+                              customJoinSound?.id === p.id
+                                ? 'bg-discord-blurple text-white border-discord-blurple shadow'
+                                : 'bg-[#2b2d31] border-[#383a40] hover:bg-[#35373c] text-discord-gray-300 hover:text-white'
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Custom Audio Upload */}
+                    <div className="pt-2 border-t border-discord-darkest/60 flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-semibold text-white block">Upload Your Own Audio</span>
+                        <span className="text-[11px] text-discord-gray-400">
+                          Supports MP3, WAV, or OGG (Stored locally on your device).
+                        </span>
+                      </div>
+                      <input
+                        ref={soundFileInputRef}
+                        type="file"
+                        accept="audio/*"
+                        onChange={handleSoundFileUpload}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => soundFileInputRef.current?.click()}
+                        className="px-3 py-1.5 rounded-lg bg-discord-darkest hover:bg-discord-hover border border-[#3f4147] text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Choose Audio File...</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="p-3 bg-discord-sidebar/60 border border-discord-darkest rounded-lg text-xs text-discord-gray-300 space-y-1">
                   <span className="font-semibold text-white block">Echo Cancellation & Studio Filters</span>
                   <p className="text-discord-gray-400 text-[11px]">
@@ -833,6 +978,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                         onClick={() => {
                           setKeybind('pushToTalk', 'Mouse4');
                           setInputMode('push_to_talk');
+                          setRecordingKeybindFor(null);
                         }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'Mouse4'
@@ -847,6 +993,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                         onClick={() => {
                           setKeybind('pushToTalk', 'Mouse5');
                           setInputMode('push_to_talk');
+                          setRecordingKeybindFor(null);
                         }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'Mouse5'
@@ -861,6 +1008,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                         onClick={() => {
                           setKeybind('pushToTalk', 'Mouse3');
                           setInputMode('push_to_talk');
+                          setRecordingKeybindFor(null);
                         }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'Mouse3'
@@ -875,6 +1023,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                         onClick={() => {
                           setKeybind('pushToTalk', 'ControlRight');
                           setInputMode('push_to_talk');
+                          setRecordingKeybindFor(null);
                         }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'ControlRight'
@@ -889,6 +1038,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                         onClick={() => {
                           setKeybind('pushToTalk', 'Backquote');
                           setInputMode('push_to_talk');
+                          setRecordingKeybindFor(null);
                         }}
                         className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                           keybinds.pushToTalk === 'Backquote'

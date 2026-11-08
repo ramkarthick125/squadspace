@@ -3,15 +3,12 @@ import {
   X,
   ScreenShare,
   Tv,
-  Gamepad2,
-  FileCode,
-  Zap,
   Volume2,
-  ShieldCheck,
-  Sparkles,
   Monitor,
   AppWindow,
   RefreshCw,
+  Info,
+  Loader2,
 } from 'lucide-react';
 import { ScreenSharePreset, SCREEN_SHARE_PRESETS } from '../../lib/livekit';
 import { DesktopCaptureSource } from '../../types';
@@ -38,8 +35,9 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
   const [selectedResolution, setSelectedResolution] = useState<'720p' | '1080p' | '1440p' | 'source'>('1080p');
   const [selectedFps, setSelectedFps] = useState<15 | 30 | 60>(60);
   const [shareSystemAudio, setShareSystemAudio] = useState(true);
+  const [isStarting, setIsStarting] = useState(false);
 
-  // Tabs: 'sources' (Applications & Screens) | 'quality' (Resolution & FPS)
+  // Tabs: 'screens' | 'apps' | 'quality'
   const [activeTab, setActiveTab] = useState<'apps' | 'screens' | 'quality'>(
     isElectron ? 'screens' : 'quality'
   );
@@ -75,18 +73,6 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSelectPreset = (key: ScreenSharePreset) => {
-    setSelectedPreset(key);
-    if (key.includes('720p')) setSelectedResolution('720p');
-    else if (key.includes('1440p') || key.includes('2k')) setSelectedResolution('1440p');
-    else if (key.includes('source')) setSelectedResolution('source');
-    else setSelectedResolution('1080p');
-
-    if (key.includes('60')) setSelectedFps(60);
-    else if (key.includes('15')) setSelectedFps(15);
-    else setSelectedFps(30);
-  };
-
   const handleCustomSelect = (res: '720p' | '1080p' | '1440p' | 'source', fps: 15 | 30 | 60) => {
     setSelectedResolution(res);
     setSelectedFps(fps);
@@ -102,12 +88,19 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
     }
   };
 
-  const handleGoLive = () => {
-    onStartStream(selectedPreset, {
-      systemAudio: shareSystemAudio,
-      sourceId: selectedSourceId || undefined,
-    });
-    onClose();
+  const handleGoLive = async () => {
+    try {
+      setIsStarting(true);
+      await onStartStream(selectedPreset, {
+        systemAudio: shareSystemAudio,
+        sourceId: selectedSourceId || undefined,
+      });
+      onClose();
+    } catch (err) {
+      console.warn('Screen share failed:', err);
+    } finally {
+      setIsStarting(false);
+    }
   };
 
   const currentConfig = SCREEN_SHARE_PRESETS[selectedPreset] || SCREEN_SHARE_PRESETS['1080p-60'];
@@ -133,17 +126,37 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
               </h2>
               <p className="text-xs text-discord-gray-300">
                 {isElectron
-                  ? 'Select an application window or screen to stream with native GPU acceleration.'
-                  : 'Choose stream quality and resolution before going live.'}
+                  ? 'Select a display or application window to stream.'
+                  : 'Choose stream quality before broadcasting.'}
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-discord-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-[#35373c] transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+
+          <div className="flex items-center gap-2">
+            {/* Professional Info Tooltip */}
+            <div className="relative group">
+              <div className="p-1.5 rounded-lg text-discord-gray-400 hover:text-white hover:bg-[#35373c] transition cursor-help flex items-center gap-1">
+                <Info className="w-4 h-4" />
+                <span className="text-[11px] font-medium hidden sm:inline">Tips</span>
+              </div>
+              <div className="absolute right-0 top-full mt-2 hidden group-hover:block w-72 p-3 rounded-xl bg-[#1e1f22] text-discord-gray-300 text-xs shadow-2xl border border-white/10 z-50 leading-relaxed pointer-events-none">
+                <div className="font-bold text-white mb-1">Streaming Tips</div>
+                <p className="text-[11px] text-discord-gray-300">
+                  • Select the <strong>Screens</strong> tab to stream full displays without YouTube black screens.
+                </p>
+                <p className="text-[11px] text-discord-gray-300 mt-1">
+                  • Full screen capture prevents stutter when Alt-Tabbing away from active games.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="text-discord-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-[#35373c] transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Navigation */}
@@ -151,17 +164,6 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
           <div className="flex gap-2">
             {isElectron && (
               <>
-                <button
-                  onClick={() => setActiveTab('apps')}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                    activeTab === 'apps'
-                      ? 'bg-discord-blurple text-white shadow-sm'
-                      : 'bg-[#2b2d31] text-discord-gray-300 hover:text-white hover:bg-[#35373c]'
-                  }`}
-                >
-                  <AppWindow className="w-4 h-4" />
-                  <span>Applications ({appSources.length})</span>
-                </button>
                 <button
                   onClick={() => setActiveTab('screens')}
                   className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
@@ -172,6 +174,17 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
                 >
                   <Monitor className="w-4 h-4" />
                   <span>Screens ({screenSources.length})</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('apps')}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    activeTab === 'apps'
+                      ? 'bg-discord-blurple text-white shadow-sm'
+                      : 'bg-[#2b2d31] text-discord-gray-300 hover:text-white hover:bg-[#35373c]'
+                  }`}
+                >
+                  <AppWindow className="w-4 h-4" />
+                  <span>Applications ({appSources.length})</span>
                 </button>
               </>
             )}
@@ -184,7 +197,6 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
                   : 'bg-[#2b2d31] text-discord-gray-300 hover:text-white hover:bg-[#35373c]'
               }`}
             >
-              <Zap className="w-4 h-4" />
               <span>Stream Quality ({currentConfig.tag})</span>
             </button>
           </div>
@@ -203,31 +215,67 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
 
         {/* Modal Body */}
         <div className="p-6 space-y-4 overflow-y-auto flex-1">
-          {/* Alt-Tab & Co-op Pro Tip */}
-          {isElectron && (
-            <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-start gap-2.5 text-xs text-indigo-200">
-              <span className="text-base leading-none mt-0.5">🎮</span>
-              <div>
-                <p>
-                  <strong>Pro Tip for Gaming & Alt-Tabbing:</strong> Select <strong>&quot;Screens&quot; (Entire Screen)</strong> so your game never freezes or stutters when you Alt-Tab away!
-                </p>
-                <p className="text-[11px] text-indigo-300/80 mt-1">
-                  Once live, friends in this voice channel can play along with you using Virtual Xbox Controllers or Keyboard via <strong>Co-op Remote Play</strong>!
-                </p>
+          {/* TAB 1: Screens (Electron Only) */}
+          {activeTab === 'screens' && isElectron && (
+            <div className="space-y-3">
+              <div className="text-[11px] font-bold text-discord-gray-400 uppercase tracking-wider">
+                Select a Display
               </div>
+
+              {screenSources.length === 0 ? (
+                <div className="p-8 text-center text-xs text-discord-gray-400 bg-[#2b2d31] rounded-xl">
+                  No displays detected.
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  {screenSources.map((source) => {
+                    const isSelected = selectedSourceId === source.id;
+                    return (
+                      <div
+                        key={source.id}
+                        onClick={() => setSelectedSourceId(source.id)}
+                        className={`group relative rounded-xl overflow-hidden border cursor-pointer transition-all flex flex-col bg-[#2b2d31] ${
+                          isSelected
+                            ? 'border-discord-blurple ring-2 ring-discord-blurple shadow-lg'
+                            : 'border-transparent hover:border-discord-gray-400/50 hover:bg-[#35373c]'
+                        }`}
+                      >
+                        {/* Thumbnail Preview */}
+                        <div className="aspect-video w-full bg-black/60 overflow-hidden flex items-center justify-center relative">
+                          {source.thumbnail ? (
+                            <img
+                              src={source.thumbnail}
+                              alt={source.name}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                            />
+                          ) : (
+                            <Monitor className="w-10 h-10 text-discord-gray-500" />
+                          )}
+                          {isSelected && (
+                            <div className="absolute inset-0 bg-discord-blurple/20 flex items-center justify-center">
+                              <span className="w-3 h-3 rounded-full bg-discord-blurple ring-4 ring-white/20" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Title Bar */}
+                        <div className="p-3 flex items-center gap-2">
+                          <Monitor className="w-4 h-4 text-discord-blurple flex-shrink-0" />
+                          <span className="text-xs font-bold text-discord-gray-100 truncate">
+                            {source.name}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
-          {/* TAB 1: Applications (Electron Only) */}
+          {/* TAB 2: Applications (Electron Only) */}
           {activeTab === 'apps' && isElectron && (
             <div className="space-y-3">
-              <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-2">
-                <span className="text-sm mt-0.5">⚠️</span>
-                <div>
-                  <strong>Black screen on YouTube or games?</strong> Browsers and protected apps use GPU overlays that show as black boxes when sharing a window. Switch to the <strong>&quot;Screens&quot;</strong> tab to share your entire display cleanly, or disable hardware acceleration in Chrome/Edge settings.
-                </div>
-              </div>
-
               <div className="text-[11px] font-bold text-discord-gray-400 uppercase tracking-wider">
                 Select an Application Window
               </div>
@@ -256,25 +304,28 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
                             <img
                               src={source.thumbnail}
                               alt={source.name}
-                              className="w-full h-full object-cover"
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                             />
                           ) : (
                             <AppWindow className="w-8 h-8 text-discord-gray-500" />
                           )}
-                          {source.appIcon && (
-                            <img
-                              src={source.appIcon}
-                              alt="icon"
-                              className="w-5 h-5 absolute bottom-2 left-2 rounded shadow"
-                            />
+                          {isSelected && (
+                            <div className="absolute inset-0 bg-discord-blurple/20 flex items-center justify-center">
+                              <span className="w-3 h-3 rounded-full bg-discord-blurple ring-4 ring-white/20" />
+                            </div>
                           )}
                         </div>
 
-                        {/* Title */}
-                        <div className="p-2.5 text-left">
-                          <div className="text-xs font-semibold text-white truncate group-hover:text-discord-blurple-light transition-colors">
+                        {/* Title Bar */}
+                        <div className="p-2.5 flex items-center gap-2">
+                          {source.appIcon ? (
+                            <img src={source.appIcon} alt="" className="w-4 h-4 rounded" />
+                          ) : (
+                            <AppWindow className="w-4 h-4 text-discord-gray-400 flex-shrink-0" />
+                          )}
+                          <span className="text-xs font-semibold text-discord-gray-200 truncate">
                             {source.name}
-                          </div>
+                          </span>
                         </div>
                       </div>
                     );
@@ -284,225 +335,79 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: Screens (Electron Only) */}
-          {activeTab === 'screens' && isElectron && (
-            <div className="space-y-3">
-              <div className="text-[11px] font-bold text-discord-gray-400 uppercase tracking-wider">
-                Select Entire Screen
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                {screenSources.map((source) => {
-                  const isSelected = selectedSourceId === source.id;
-                  return (
-                    <div
-                      key={source.id}
-                      onClick={() => setSelectedSourceId(source.id)}
-                      className={`group relative rounded-xl overflow-hidden border cursor-pointer transition-all flex flex-col bg-[#2b2d31] ${
-                        isSelected
-                          ? 'border-discord-blurple ring-2 ring-discord-blurple shadow-lg'
-                          : 'border-transparent hover:border-discord-gray-400/50 hover:bg-[#35373c]'
+          {/* TAB 3: Professional Stream Quality */}
+          {activeTab === 'quality' && (
+            <div className="space-y-5 py-2">
+              {/* Resolution Segmented Control */}
+              <div>
+                <label className="block text-[11px] font-bold text-discord-gray-400 uppercase tracking-wider mb-2">
+                  Resolution
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { id: '720p', label: '720p', sub: 'HD' },
+                    { id: '1080p', label: '1080p', sub: 'Full HD' },
+                    { id: '1440p', label: '1440p', sub: '2K QHD' },
+                    { id: 'source', label: 'Source', sub: 'Native' },
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() =>
+                        handleCustomSelect(
+                          item.id as '720p' | '1080p' | '1440p' | 'source',
+                          selectedFps
+                        )
+                      }
+                      className={`py-2.5 px-3 rounded-lg border text-center transition cursor-pointer flex flex-col items-center justify-center ${
+                        selectedResolution === item.id
+                          ? 'bg-discord-blurple border-discord-blurple text-white shadow-md'
+                          : 'bg-[#2b2d31] border-[#383a40] hover:bg-[#35373c] text-discord-gray-300 hover:text-white'
                       }`}
                     >
-                      {/* Desktop Thumbnail Preview */}
-                      <div className="aspect-video w-full bg-black/60 overflow-hidden flex items-center justify-center">
-                        {source.thumbnail ? (
-                          <img
-                            src={source.thumbnail}
-                            alt={source.name}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <Monitor className="w-10 h-10 text-discord-gray-500" />
-                        )}
-                      </div>
-
-                      {/* Title */}
-                      <div className="p-3 text-left">
-                        <div className="text-xs font-semibold text-white truncate">
-                          {source.name}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: Quality Profiles & Custom Settings */}
-          {activeTab === 'quality' && (
-            <div className="space-y-4">
-              <div className="text-[11px] font-bold text-discord-gray-400 uppercase tracking-wider">
-                Stream Quality Profiles
-              </div>
-
-              {/* Profiles Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {/* 1. Gaming Pro */}
-                <div
-                  onClick={() => handleSelectPreset('1080p-60')}
-                  className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3.5 ${
-                    selectedPreset === '1080p-60'
-                      ? 'bg-discord-blurple/15 border-discord-blurple text-white shadow-md'
-                      : 'bg-[#2b2d31] border-transparent hover:bg-[#35373c] text-discord-gray-300'
-                  }`}
-                >
-                  <div className="p-2 rounded-lg bg-discord-blurple/20 text-discord-blurple-light mt-0.5">
-                    <Gamepad2 className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-bold text-xs text-white">Gaming Pro</span>
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-discord-blurple text-white shadow">
-                        1080p 60FPS
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-discord-gray-300 leading-snug">
-                      Ultra-smooth 60 FPS motion. Zero tearing for fast games.
-                    </p>
-                  </div>
-                </div>
-
-                {/* 2. Crisp Code */}
-                <div
-                  onClick={() => handleSelectPreset('1440p-30')}
-                  className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3.5 ${
-                    selectedPreset === '1440p-30'
-                      ? 'bg-discord-blurple/15 border-discord-blurple text-white shadow-md'
-                      : 'bg-[#2b2d31] border-transparent hover:bg-[#35373c] text-discord-gray-300'
-                  }`}
-                >
-                  <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 mt-0.5">
-                    <FileCode className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-bold text-xs text-white">Crisp Code & Text</span>
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/30 text-amber-300 border border-amber-500/40">
-                        2K QHD
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-discord-gray-300 leading-snug">
-                      High sub-pixel font sharpness. Crystal clear for code & docs.
-                    </p>
-                  </div>
-                </div>
-
-                {/* 3. Ultra 2K 60FPS */}
-                <div
-                  onClick={() => handleSelectPreset('1440p-60')}
-                  className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3.5 ${
-                    selectedPreset === '1440p-60'
-                      ? 'bg-discord-blurple/15 border-discord-blurple text-white shadow-md'
-                      : 'bg-[#2b2d31] border-transparent hover:bg-[#35373c] text-discord-gray-300'
-                  }`}
-                >
-                  <div className="p-2 rounded-lg bg-purple-500/20 text-purple-400 mt-0.5">
-                    <Sparkles className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-bold text-xs text-white">Ultra 2K Pro</span>
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-500/30 text-purple-300 border border-purple-500/40">
-                        1440p 60FPS
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-discord-gray-300 leading-snug">
-                      Supreme 2K clarity at 60 FPS. 18 Mbps high-bitrate stream.
-                    </p>
-                  </div>
-                </div>
-
-                {/* 4. Full HD Standard */}
-                <div
-                  onClick={() => handleSelectPreset('1080p-30')}
-                  className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-start gap-3.5 ${
-                    selectedPreset === '1080p-30'
-                      ? 'bg-discord-blurple/15 border-discord-blurple text-white shadow-md'
-                      : 'bg-[#2b2d31] border-transparent hover:bg-[#35373c] text-discord-gray-300'
-                  }`}
-                >
-                  <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 mt-0.5">
-                    <Zap className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-bold text-xs text-white">Full HD Balanced</span>
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/30 text-emerald-300 border border-emerald-500/40">
-                        1080p 30FPS
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-discord-gray-300 leading-snug">
-                      Balanced stream for YouTube videos and browsing.
-                    </p>
-                  </div>
+                      <span className="font-bold text-xs">{item.label}</span>
+                      <span className="text-[10px] opacity-75">{item.sub}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Resolution & FPS Pills */}
-              <div className="pt-2 border-t border-[#2b2d31] space-y-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-discord-gray-400 uppercase tracking-wider mb-2">
-                    Custom Resolution
-                  </label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {[
-                      { id: '720p', label: '720p', sub: 'HD' },
-                      { id: '1080p', label: '1080p', sub: 'Full HD' },
-                      { id: '1440p', label: '1440p', sub: '2K QHD' },
-                      { id: 'source', label: 'Source', sub: '4K Native' },
-                    ].map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() =>
-                          handleCustomSelect(
-                            item.id as '720p' | '1080p' | '1440p' | 'source',
-                            selectedFps
-                          )
-                        }
-                        className={`p-2 rounded-lg border text-center transition-all cursor-pointer ${
-                          selectedResolution === item.id
-                            ? 'bg-discord-blurple border-discord-blurple text-white shadow'
-                            : 'bg-[#2b2d31] border-transparent hover:bg-[#35373c] text-discord-gray-300'
-                        }`}
-                      >
-                        <div className="font-bold text-xs">{item.label}</div>
-                        <div className="text-[10px] opacity-75">{item.sub}</div>
-                      </button>
-                    ))}
-                  </div>
+              {/* Frame Rate Segmented Control */}
+              <div>
+                <label className="block text-[11px] font-bold text-discord-gray-400 uppercase tracking-wider mb-2">
+                  Frame Rate
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { fps: 15, label: '15 FPS', sub: 'Text / Reading' },
+                    { fps: 30, label: '30 FPS', sub: 'Standard' },
+                    { fps: 60, label: '60 FPS', sub: 'Smooth Motion' },
+                  ].map((item) => (
+                    <button
+                      key={item.fps}
+                      type="button"
+                      onClick={() =>
+                        handleCustomSelect(selectedResolution, item.fps as 15 | 30 | 60)
+                      }
+                      className={`py-2.5 px-3 rounded-lg border text-center transition cursor-pointer flex flex-col items-center justify-center ${
+                        selectedFps === item.fps
+                          ? 'bg-discord-blurple border-discord-blurple text-white shadow-md'
+                          : 'bg-[#2b2d31] border-[#383a40] hover:bg-[#35373c] text-discord-gray-300 hover:text-white'
+                      }`}
+                    >
+                      <span className="font-bold text-xs">{item.label}</span>
+                      <span className="text-[10px] opacity-75">{item.sub}</span>
+                    </button>
+                  ))}
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-discord-gray-400 uppercase tracking-wider mb-2">
-                    Custom Frame Rate
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { fps: 15, label: '15 FPS', sub: 'Slides / Reading' },
-                      { fps: 30, label: '30 FPS', sub: 'Standard Video' },
-                      { fps: 60, label: '60 FPS', sub: 'Smooth Gaming' },
-                    ].map((item) => (
-                      <button
-                        key={item.fps}
-                        type="button"
-                        onClick={() =>
-                          handleCustomSelect(selectedResolution, item.fps as 15 | 30 | 60)
-                        }
-                        className={`p-2 rounded-lg border text-center transition-all cursor-pointer ${
-                          selectedFps === item.fps
-                            ? 'bg-discord-blurple border-discord-blurple text-white shadow'
-                            : 'bg-[#2b2d31] border-transparent hover:bg-[#35373c] text-discord-gray-300'
-                        }`}
-                      >
-                        <div className="font-bold text-xs">{item.label}</div>
-                        <div className="text-[10px] opacity-75">{item.sub}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+              {/* Current Configuration Summary */}
+              <div className="p-3 bg-[#232428] rounded-xl border border-white/5 flex items-center justify-between text-xs text-discord-gray-300">
+                <span>Output Stream Target:</span>
+                <span className="font-mono font-bold text-discord-blurple-light">
+                  {currentConfig.tag} • {Math.round(currentConfig.maxBitrate / 1_000_000)} Mbps
+                </span>
               </div>
             </div>
           )}
@@ -527,15 +432,6 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
               />
             </label>
           </div>
-
-          {/* Direct P2P Info Banner */}
-          <div className="p-3 bg-discord-blurple/10 border border-discord-blurple/25 rounded-xl flex items-center gap-2.5 text-xs text-discord-blurple-light">
-            <ShieldCheck className="w-4 h-4 flex-shrink-0" />
-            <span>
-              Direct P2P WebRTC: <strong>{currentConfig.name}</strong> at{' '}
-              {Math.round(currentConfig.maxBitrate / 1_000_000)} Mbps. No server bandwidth limits!
-            </span>
-          </div>
         </div>
 
         {/* Footer */}
@@ -552,6 +448,7 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
             <button
               type="button"
               onClick={onClose}
+              disabled={isStarting}
               className="px-4 py-2 text-xs font-semibold text-discord-gray-300 hover:text-white transition-colors cursor-pointer"
             >
               Cancel
@@ -559,10 +456,20 @@ export const ScreenShareModal: React.FC<ScreenShareModalProps> = ({
             <button
               type="button"
               onClick={handleGoLive}
-              className="px-6 py-2 rounded-lg bg-discord-blurple hover:bg-discord-blurple-hover text-white text-xs font-bold shadow-lg shadow-discord-blurple/30 transition-all flex items-center gap-2 cursor-pointer"
+              disabled={isStarting}
+              className="px-6 py-2 rounded-lg bg-discord-blurple hover:bg-discord-blurple-hover disabled:opacity-50 text-white text-xs font-bold shadow-lg shadow-discord-blurple/30 transition-all flex items-center gap-2 cursor-pointer"
             >
-              <ScreenShare className="w-4 h-4" />
-              <span>Go Live</span>
+              {isStarting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Starting...</span>
+                </>
+              ) : (
+                <>
+                  <ScreenShare className="w-4 h-4" />
+                  <span>Go Live</span>
+                </>
+              )}
             </button>
           </div>
         </div>
