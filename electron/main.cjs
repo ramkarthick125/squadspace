@@ -59,12 +59,11 @@ function createMainWindow() {
       webSecurity: true,
       backgroundThrottling: false, // Prevent frame drops and throttling when Alt-Tabbing or window loses focus
     },
-    show: false,
+    show: true, // Show window immediately on launch
   });
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-  });
+  mainWindow.show();
+  mainWindow.focus();
 
   // Window state change notifications
   mainWindow.on('maximize', () => {
@@ -158,13 +157,10 @@ function createMainWindow() {
     }
   });
 
-  // Minimize to tray on close unless quitting
-  mainWindow.on('close', (event) => {
-    if (!isQuitting) {
-      event.preventDefault();
-      mainWindow.hide();
-      return false;
-    }
+  // Cleanly quit application on close
+  mainWindow.on('close', () => {
+    isQuitting = true;
+    app.quit();
   });
 
   // Load URL: Dev Server -> Local Bundled App (Fast, Native Co-op & Gaming Mouse Support)
