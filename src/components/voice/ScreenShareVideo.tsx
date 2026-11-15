@@ -16,6 +16,7 @@ import {
 import { UserProfile } from '../../types';
 import { useCoopStore } from '../../store/useCoopStore';
 import { coopClient } from '../../lib/coopClient';
+import { webrtcManager } from '../../lib/webrtcManager';
 import { CoopHostPanel } from './CoopHostPanel';
 import { CoopJoinModal } from './CoopJoinModal';
 import { GamepadVisualizer } from './GamepadVisualizer';
@@ -79,17 +80,21 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
       const v = videoRef.current;
       v.srcObject = stream;
       v.playbackRate = 1.0;
-      v.muted = isLocal ? true : isMuted;
+      // Remote screen audio is played through webrtcManager.remoteScreenAudioElements with deafen support;
+      // keep the video element muted so audio is never duplicated or echoed.
+      v.muted = true;
       v.play().catch(() => {});
     }
-  }, [stream, isLocal, isMuted]);
+  }, [stream]);
 
-  // Sync volume with video element
+  // Sync volume with webrtcManager remote screen audio & video element
   useEffect(() => {
     if (videoRef.current) {
       videoRef.current.volume = volume / 100;
-      videoRef.current.muted = isLocal ? true : isMuted;
+      videoRef.current.muted = true;
     }
+    webrtcManager.setScreenShareVolume(volume / 100);
+    webrtcManager.setScreenShareMuted(isMuted || isLocal);
   }, [volume, isMuted, isLocal]);
 
   // Keyboard & Mouse capture for remote player in keyboard mode

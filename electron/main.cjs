@@ -407,8 +407,11 @@ ipcMain.handle('lounge:load-model', async (_event, modelName) => {
       path.join(__dirname, '../dist/models'),
       path.join(__dirname, '../public/models'),
       path.join(app.getAppPath(), 'dist/models'),
+      path.join(app.getAppPath(), 'public/models'),
       path.join(process.resourcesPath || '', 'app.asar.unpacked/dist/models'),
+      path.join(process.resourcesPath || '', 'app.asar.unpacked/public/models'),
       path.join(process.resourcesPath || '', 'models'),
+      path.join(path.dirname(app.getAppPath()), 'app.asar.unpacked/dist/models'),
     ];
     for (const dir of candidateDirs) {
       const fullPath = path.join(dir, cleanName);

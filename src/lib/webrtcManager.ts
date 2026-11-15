@@ -101,6 +101,9 @@ class WebRTCManager {
   private supabaseSignalingChannel: RealtimeChannel | null = null;
   private peers: Map<string, RTCPeerConnection> = new Map();
   private remoteAudioElements: Map<string, HTMLAudioElement> = new Map();
+  private remoteScreenAudioElements: Map<string, HTMLAudioElement> = new Map();
+  private screenShareVolume: number = 1.0;
+  private screenShareMuted: boolean = false;
 
   // Low latency & Perfect negotiation state
   private pendingCandidates: Map<string, RTCIceCandidateInit[]> = new Map();
@@ -317,9 +320,18 @@ class WebRTCManager {
     // Remove remote audio elements
     this.remoteAudioElements.forEach((el) => {
       el.pause();
+      el.srcObject = null;
       el.remove();
     });
     this.remoteAudioElements.clear();
+
+    // Remove remote screen share audio elements
+    this.remoteScreenAudioElements.forEach((el) => {
+      el.pause();
+      el.srcObject = null;
+      el.remove();
+    });
+    this.remoteScreenAudioElements.clear();
     this.remoteScreenStreamIds.clear();
     this.remoteVoiceStreams.clear();
 
@@ -353,10 +365,8 @@ class WebRTCManager {
 
       // 1. Electron Native Desktop Capture (Only when running in Electron with a specific sourceId)
       if (isElectron && options?.sourceId) {
-        const isScreenSource = options.sourceId.startsWith('screen:');
-
-        // Native capture with system audio (only on whole screens in Windows)
-        if (options?.systemAudio !== false && isScreenSource) {
+        // Try native capture with system audio (for both whole screens AND application windows)
+        if (options?.systemAudio !== false) {
           try {
             stream = await navigator.mediaDevices.getUserMedia({
               audio: {
@@ -375,11 +385,11 @@ class WebRTCManager {
               },
             } as any);
           } catch (audioErr) {
-            console.warn('[ScreenShare] Native capture with audio failed, falling back to video-only:', audioErr);
+            console.warn('[ScreenShare] Combined native capture with audio failed, will capture video and attach audio track separately:', audioErr);
           }
         }
 
-        // Native capture video-only if audio failed or was not requested
+        // Native capture video-only if combined capture failed or was not requested
         if (!stream) {
           try {
             stream = await navigator.mediaDevices.getUserMedia({
@@ -396,6 +406,27 @@ class WebRTCManager {
             } as any);
           } catch (vidErr) {
             console.warn('[ScreenShare] Native sourceId capture failed, falling back to getDisplayMedia:', vidErr);
+          }
+        }
+
+        // If video succeeded but audio track is missing and user requested system audio:
+        // Capture desktop loopback audio separately and attach it to the stream!
+        if (stream && stream.getAudioTracks().length === 0 && options?.systemAudio !== false) {
+          try {
+            const sysAudioStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                mandatory: {
+                  chromeMediaSource: 'desktop',
+                },
+              },
+              video: false,
+            } as any);
+            sysAudioStream.getAudioTracks().forEach((aTrack) => {
+              stream!.addTrack(aTrack);
+            });
+            console.log('[ScreenShare] Successfully attached desktop loopback audio track to stream!');
+          } catch (sepAudioErr) {
+            console.warn('[ScreenShare] Separate desktop loopback audio capture failed:', sepAudioErr);
           }
         }
       }
@@ -420,7 +451,14 @@ class WebRTCManager {
               },
             });
           } catch (dispAudioErr) {
-            console.warn('[ScreenShare] getDisplayMedia with audio failed, retrying video only:', dispAudioErr);
+            try {
+              stream = await navigator.mediaDevices.getDisplayMedia({
+                video: displayVideoConstraints,
+                audio: true,
+              });
+            } catch (dispBoolErr) {
+              console.warn('[ScreenShare] getDisplayMedia with audio failed, retrying video only:', dispBoolErr);
+            }
           }
         }
 
@@ -618,6 +656,23 @@ class WebRTCManager {
     this.remoteAudioElements.forEach((el) => {
       el.muted = deafened;
     });
+    this.remoteScreenAudioElements.forEach((el) => {
+      el.muted = deafened || this.screenShareMuted;
+    });
+  }
+
+  setScreenShareVolume(volumeRatio: number) {
+    this.screenShareVolume = Math.max(0, Math.min(1, volumeRatio));
+    this.remoteScreenAudioElements.forEach((el) => {
+      el.volume = this.screenShareVolume;
+    });
+  }
+
+  setScreenShareMuted(muted: boolean) {
+    this.screenShareMuted = muted;
+    this.remoteScreenAudioElements.forEach((el) => {
+      el.muted = this.isDeafened || this.screenShareMuted;
+    });
   }
 
   onAudioLevel(callback: AudioLevelCallback): () => void {
@@ -780,7 +835,7 @@ class WebRTCManager {
           (this.remoteVoiceStreams.has(peerId) && this.remoteVoiceStreams.get(peerId)?.id !== stream.id);
 
         if (!isScreenAudio) {
-          // Never loop back user's own audio
+          // 1. Microphone voice chat audio
           if (peerId === this.myUserId) return;
           if (this.localAudioStream && this.localAudioStream.getAudioTracks().some((t) => t.id === event.track.id)) {
             return;
@@ -796,6 +851,26 @@ class WebRTCManager {
           }
           audioEl.srcObject = stream;
           audioEl.play().catch(() => {});
+        } else {
+          // 2. Screen share system / game / media audio!
+          if (peerId === this.myUserId) return;
+          if (this.localScreenStream && this.localScreenStream.getAudioTracks().some((t) => t.id === event.track.id)) {
+            return;
+          }
+
+          let screenAudioEl = this.remoteScreenAudioElements.get(peerId);
+          if (!screenAudioEl) {
+            screenAudioEl = new Audio();
+            screenAudioEl.autoplay = true;
+            screenAudioEl.muted = this.isDeafened || this.screenShareMuted;
+            screenAudioEl.volume = this.screenShareVolume;
+            this.remoteScreenAudioElements.set(peerId, screenAudioEl);
+          }
+          const screenAudioStream = new MediaStream([event.track]);
+          screenAudioEl.srcObject = screenAudioStream;
+          screenAudioEl.play().catch((err) => {
+            console.warn('[ScreenShare] Remote screen audio playback failed or blocked:', err);
+          });
         }
       }
 
@@ -958,6 +1033,14 @@ class WebRTCManager {
           this.remoteAudioElements.delete(data.senderId);
         }
 
+        const screenAudioEl = this.remoteScreenAudioElements.get(data.senderId);
+        if (screenAudioEl) {
+          screenAudioEl.pause();
+          screenAudioEl.srcObject = null;
+          screenAudioEl.remove();
+          this.remoteScreenAudioElements.delete(data.senderId);
+        }
+
         const coopDc = this.coopDataChannels.get(data.senderId);
         if (coopDc) {
           try {
@@ -1006,6 +1089,13 @@ class WebRTCManager {
 
       case 'screen-stop': {
         this.remoteScreenStreamIds.delete(data.senderId);
+        const screenAudioEl = this.remoteScreenAudioElements.get(data.senderId);
+        if (screenAudioEl) {
+          screenAudioEl.pause();
+          screenAudioEl.srcObject = null;
+          screenAudioEl.remove();
+          this.remoteScreenAudioElements.delete(data.senderId);
+        }
         this.onParticipantUpdateCallbacks.forEach((cb) =>
           cb(data.senderId, { isScreenSharing: false })
         );

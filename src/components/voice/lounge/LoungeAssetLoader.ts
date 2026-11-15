@@ -31,22 +31,43 @@ export class LoungeAssetLoader {
       // This is 100% resilient inside packaged app.asar on Windows/macOS/Linux!
       if (typeof window !== 'undefined' && (window as any).electronAPI?.loadModelBuffer) {
         try {
-          const buffer = await (window as any).electronAPI.loadModelBuffer(fileName);
-          if (buffer && buffer.byteLength > 0) {
-            this.loader.parse(
-              buffer,
-              '',
-              (gltf) => {
-                this.cache.set(url, gltf);
-                this.pendingPromises.delete(url);
-                resolve(gltf);
-              },
-              (parseErr) => {
-                console.warn(`[LoungeAssetLoader] Parse buffer error for ${fileName}, falling back:`, parseErr);
-                this.loadViaFetch(url, resolve, reject);
+          const raw = await (window as any).electronAPI.loadModelBuffer(fileName);
+          if (raw) {
+            let arrayBuffer: ArrayBuffer | null = null;
+            if (raw instanceof ArrayBuffer) {
+              arrayBuffer = raw;
+            } else if (ArrayBuffer.isView(raw)) {
+              arrayBuffer = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) as ArrayBuffer;
+            } else if (raw.buffer && raw.buffer instanceof ArrayBuffer) {
+              arrayBuffer = (raw.buffer as ArrayBuffer).slice(raw.byteOffset || 0, (raw.byteOffset || 0) + (raw.byteLength || raw.length));
+            } else if (raw.data && Array.isArray(raw.data)) {
+              arrayBuffer = new Uint8Array(raw.data).buffer as ArrayBuffer;
+            } else if (typeof raw === 'object' && raw.length !== undefined) {
+              arrayBuffer = new Uint8Array(raw).buffer as ArrayBuffer;
+            }
+
+            if (arrayBuffer && arrayBuffer.byteLength > 0) {
+              try {
+                this.loader.parse(
+                  arrayBuffer,
+                  '',
+                  (gltf) => {
+                    this.cache.set(url, gltf);
+                    this.pendingPromises.delete(url);
+                    resolve(gltf);
+                  },
+                  (parseErr) => {
+                    console.warn(`[LoungeAssetLoader] Parse buffer error for ${fileName}, trying Blob URL:`, parseErr);
+                    this.loadViaBlobUrl(arrayBuffer!, url, resolve, reject);
+                  }
+                );
+                return;
+              } catch (parseEx) {
+                console.warn(`[LoungeAssetLoader] Parse exception for ${fileName}, trying Blob URL:`, parseEx);
+                this.loadViaBlobUrl(arrayBuffer, url, resolve, reject);
+                return;
               }
-            );
-            return;
+            }
           }
         } catch (ipcErr) {
           console.warn(`[LoungeAssetLoader] IPC loadModelBuffer error for ${fileName}:`, ipcErr);
@@ -59,6 +80,36 @@ export class LoungeAssetLoader {
 
     this.pendingPromises.set(url, promise);
     return promise;
+  }
+
+  private loadViaBlobUrl(
+    buffer: ArrayBuffer,
+    url: string,
+    resolve: (gltf: GLTF) => void,
+    reject: (err: any) => void
+  ) {
+    try {
+      const blob = new Blob([buffer], { type: 'model/gltf-binary' });
+      const blobUrl = URL.createObjectURL(blob);
+      this.loader.load(
+        blobUrl,
+        (gltf) => {
+          URL.revokeObjectURL(blobUrl);
+          this.cache.set(url, gltf);
+          this.pendingPromises.delete(url);
+          resolve(gltf);
+        },
+        undefined,
+        (err) => {
+          URL.revokeObjectURL(blobUrl);
+          this.pendingPromises.delete(url);
+          console.error(`[LoungeAssetLoader] Blob URL loading failed for ${url}:`, err);
+          this.loadViaFetch(url, resolve, reject);
+        }
+      );
+    } catch (err) {
+      this.loadViaFetch(url, resolve, reject);
+    }
   }
 
   private loadViaFetch(url: string, resolve: (gltf: GLTF) => void, reject: (err: any) => void) {

@@ -69,8 +69,9 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
   const [hoveredSeat, setHoveredSeat] = useState<SeatDefinition | null>(null);
   const [nearestSeat, setNearestSeat] = useState<SeatDefinition | null>(null);
   const [isSitting, setIsSitting] = useState<boolean>(false);
-  const [cameraView, setCameraView] = useState<'follow' | 'iso' | 'tv'>('iso');
-  const cameraViewRef = useRef<'follow' | 'iso' | 'tv'>('iso');
+  const [cameraView, setCameraView] = useState<'follow' | 'iso' | 'tv'>('follow');
+  const cameraViewRef = useRef<'follow' | 'iso' | 'tv'>('follow');
+  const isAnimatingCameraRef = useRef<boolean>(false);
   const [activeEmote, setActiveEmote] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState<boolean>(false);
 
@@ -114,9 +115,9 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // 2. Camera: Positioned matching the user's penthouse panoramic view (Image 2)
+    // 2. Camera: Positioned matching the user's reference third-person follow view (Image 1)
     const camera = new THREE.PerspectiveCamera(46, width / height, 0.1, 90);
-    camera.position.set(0.0, 8.8, 12.5);
+    camera.position.set(3.4, 3.6, 4.8);
     cameraRef.current = camera;
 
     // 3. Orbit Controls (Completely free 360° mouse look with zero fighting)
@@ -124,10 +125,10 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.rotateSpeed = 0.85;
-    controls.target.set(0.0, 1.2, 0.4);
+    controls.target.set(0.2, 1.1, 0.4);
     controls.maxPolarAngle = Math.PI / 2.05;
     controls.minPolarAngle = 0.15;
-    controls.minDistance = 2.0;
+    controls.minDistance = 1.5;
     controls.maxDistance = 26.0;
     controlsRef.current = controls;
 
@@ -293,7 +294,7 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
       setIsRunning(playerController.isRunning);
 
       // Smooth Follow Mode: Translates camera along with the avatar's movement WITHOUT fighting orbit angle!
-      if (cameraViewRef.current === 'follow') {
+      if (!isAnimatingCameraRef.current && cameraViewRef.current === 'follow') {
         const avatarPos = localAvatar.group.position;
         const desiredTarget = new THREE.Vector3(avatarPos.x, avatarPos.y + 1.1, avatarPos.z);
         const targetDelta = desiredTarget.clone().sub(controls.target);
@@ -369,9 +370,10 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     const controls = controlsRef.current;
     if (!camera || !controls) return;
 
+    isAnimatingCameraRef.current = true;
     const startPos = camera.position.clone();
     const startTarget = controls.target.clone();
-    const duration = 700;
+    const duration = 650;
     const startTime = performance.now();
 
     const step = (now: number) => {
@@ -384,6 +386,8 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
 
       if (progress < 1.0) {
         requestAnimationFrame(step);
+      } else {
+        isAnimatingCameraRef.current = false;
       }
     };
     requestAnimationFrame(step);
@@ -400,7 +404,7 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     } else if (mode === 'follow' && playerControllerRef.current) {
       const avatarPos = playerControllerRef.current.avatar.group.position;
       animateCameraTo(
-        new THREE.Vector3(avatarPos.x, avatarPos.y + 2.2, avatarPos.z + 3.8),
+        new THREE.Vector3(avatarPos.x + 3.2, avatarPos.y + 3.0, avatarPos.z + 4.4),
         new THREE.Vector3(avatarPos.x, avatarPos.y + 1.1, avatarPos.z)
       );
     }

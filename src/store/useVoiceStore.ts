@@ -131,6 +131,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
           screenShareParticipantId: peerId,
           screenShareStream: stream,
         });
+      } else if (track.kind === 'audio') {
+        const { screenShareParticipantId, screenShareStream } = get();
+        if (screenShareParticipantId === peerId && screenShareStream) {
+          if (!screenShareStream.getAudioTracks().some((t) => t.id === track.id)) {
+            screenShareStream.addTrack(track);
+          }
+        }
       }
     });
 

@@ -399,11 +399,6 @@ export class LoungeScene {
 
     // 1. TV Screen Mesh (Left wall at X = -7.32, facing +X into room)
     const tvScreenGeo = new THREE.PlaneGeometry(tvWidth, tvHeight);
-    const uvAttr = tvScreenGeo.attributes.uv;
-    for (let i = 0; i < uvAttr.count; i++) {
-      uvAttr.setX(i, 1 - uvAttr.getX(i));
-    }
-    uvAttr.needsUpdate = true;
     tvScreenGeo.rotateY(Math.PI / 2);
     tvScreenGeo.computeVertexNormals();
 
