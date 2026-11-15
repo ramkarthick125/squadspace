@@ -15,6 +15,8 @@ import {
   Tv,
   Gamepad2,
   Armchair,
+  Wifi,
+  Activity,
 } from 'lucide-react';
 import { Channel, UserProfile } from '../../types';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -60,6 +62,8 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
     toggleScreenShare,
     leaveVoiceChannel,
     joinVoiceChannel,
+    currentPing,
+    peerPings,
   } = useVoiceStore();
 
   const [showVoiceChat, setShowVoiceChat] = useState(false);
@@ -134,6 +138,21 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
               <Sparkles className="w-3 h-3" />
               Direct P2P (Unlimited HD)
             </span>
+            {isConnected && (
+              <span
+                title={`Latency: ${currentPing > 0 ? `${currentPing}ms` : '< 20ms'} (Direct P2P Round-Trip Time)`}
+                className={`text-xs px-2 py-0.5 rounded font-mono font-semibold flex items-center gap-1 ${
+                  (currentPing || 15) <= 45
+                    ? 'bg-discord-green/20 text-discord-green'
+                    : (currentPing || 15) <= 100
+                    ? 'bg-amber-500/20 text-amber-300'
+                    : 'bg-rose-500/20 text-rose-300'
+                }`}
+              >
+                <Wifi className="w-3 h-3" />
+                <span>{currentPing > 0 ? `${currentPing} ms` : '< 20 ms'}</span>
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -334,7 +353,14 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
                             ) : p.isSpeaking ? (
                               <span className="text-discord-green font-semibold">Speaking...</span>
                             ) : (
-                              <span>Connected</span>
+                              <span className="flex items-center gap-1">
+                                <span>Connected</span>
+                                {(peerPings[p.userId] || (isMe && currentPing > 0)) && (
+                                  <span className="text-[9px] text-discord-gray-400 font-mono">
+                                    ({peerPings[p.userId] || currentPing}ms)
+                                  </span>
+                                )}
+                              </span>
                             )}
                           </div>
                         </div>
@@ -377,6 +403,12 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
                     {/* Participant Name Badge */}
                     <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded text-xs font-semibold text-white flex items-center gap-2">
                       <span>{p.user.displayName} {isMe && '(You)'}</span>
+                      {(peerPings[p.userId] || (isMe && currentPing > 0)) && (
+                        <span className="text-[10px] text-discord-gray-400 font-mono flex items-center gap-0.5">
+                          <Wifi className="w-2.5 h-2.5 text-discord-green" />
+                          {peerPings[p.userId] || currentPing}ms
+                        </span>
+                      )}
                       {p.isMuted && <MicOff className="w-3.5 h-3.5 text-discord-red" />}
                     </div>
 

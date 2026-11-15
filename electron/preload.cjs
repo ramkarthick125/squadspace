@@ -84,4 +84,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   checkForUpdates: () => ipcRenderer.invoke('updater:check'),
   restartAndInstallUpdate: () => ipcRenderer.send('updater:restart-and-install'),
+
+  // Stream Diagnostics Persistent Disk Logger
+  appendDiagnosticLog: (entry) => ipcRenderer.send('diagnostics:append-log', entry),
 });

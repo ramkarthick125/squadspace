@@ -25,16 +25,17 @@ if (!token) {
 
 const OWNER = 'ramkarthick125';
 const REPO = 'squadspace';
-const TAG = 'v1.0.3';
-const RELEASE_NAME = 'SquadSpace 1.0.3';
-const BODY = `## SquadSpace 1.0.3
+const TAG = 'v1.0.4';
+const RELEASE_NAME = 'SquadSpace 1.0.4';
+const BODY = `## SquadSpace 1.0.4
 
-### 60 FPS Fluidity & True Frame Pacing Overhaul
-- **maintain-framerate Enforcement**: Strictly locks WebRTC to full 60 FPS frame delivery without dropping frames during motion or high bitrate transmission.
-- **Pacing Jitter Buffer Target (25ms)**: Absorbs network packet timing deltas so the video renderer displays frames on a buttery-smooth 16.6ms cadence without micro-stutters.
-- **DirectX DXGI Desktop Duplication**: Bypasses Windows DWM 60Hz throttling bug via native GPU framebuffer capture.
-- **Hardware Overlay Surface**: Promotes video rendering element to a dedicated Direct3D 11 compositing layer.
-- **Native Resolution Desktop Capturer**: Removes rigid software scaler constraints to prevent frame pacing judder.
+### Voice Chat Ping Status & Stream Diagnostics Engine
+- **Voice Chat Ping & RTT Status**: Real-time round-trip latency display in both the sidebar voice quick-card and Voice Room header with color-coded signal quality.
+- **Peer-by-Peer Ping**: Displays individual latency to each peer participant in voice tiles and the docked participant strip.
+- **Stream Diagnostics "i" Button Overlay**: Full Stats for Nerds overlay on screen shares. Live Framerate gauge (target 60 FPS), Bitrate (Mbps), Resolution, Codec (AV1/VP9), Packet Loss, Jitter, Decode Latency, and Dropped Frames counter.
+- **Automated Lag & Pixelation Health Logger**: Continuously monitors streams in 1.5s intervals, automatically detecting and logging framerate drops, bitrate collapses, packet loss spikes, and decode bottlenecks with timestamps, probable causes, and recommendations.
+- **Diagnostic Log Export**: 1-click clipboard copy and text report export so users can review test sessions alone without needing an external observer.
+- **Persistent Disk Logging**: Automated streaming diagnostic events appended directly to \`squadspace-stream-diagnostics.log\`.
 `;
 
 function apiRequest(method, endpoint, body) {
@@ -133,11 +134,11 @@ async function main() {
 
   const filesToUpload = [
     {
-      path: path.join(__dirname, '..', 'release', 'SquadSpace Setup 1.0.3.exe'),
+      path: path.join(__dirname, '..', 'release', 'SquadSpace Setup 1.0.4.exe'),
       type: 'application/octet-stream',
     },
     {
-      path: path.join(__dirname, '..', 'release', 'SquadSpace Setup 1.0.3.exe.blockmap'),
+      path: path.join(__dirname, '..', 'release', 'SquadSpace Setup 1.0.4.exe.blockmap'),
       type: 'application/octet-stream',
     },
     {
@@ -145,7 +146,7 @@ async function main() {
       type: 'text/yaml',
     },
     {
-      path: path.join(__dirname, '..', 'release', 'SquadSpace 1.0.3.exe'),
+      path: path.join(__dirname, '..', 'release', 'SquadSpace 1.0.4.exe'),
       type: 'application/octet-stream',
     },
   ];

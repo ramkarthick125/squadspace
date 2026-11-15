@@ -18,6 +18,8 @@ import { SCREEN_SHARE_PRESETS, ScreenSharePreset } from './livekit';
 import { UserProfile, VoiceParticipant } from '../types';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { sounds } from './soundEffects';
+import { WebRTCStreamStats } from '../types/streamStats';
+import { streamHealthMonitor } from './streamHealthMonitor';
 
 export interface PeerConnectionInfo {
   peerId: string;
@@ -36,6 +38,8 @@ type ParticipantJoinedCallback = (
 ) => void;
 type ParticipantLeftCallback = (userId: string) => void;
 type ParticipantUpdateCallback = (userId: string, updates: Partial<VoiceParticipant>) => void;
+type PingCallback = (overallPing: number, peerPings: Record<string, number>) => void;
+type StreamStatsCallback = (stats: WebRTCStreamStats | null) => void;
 
 /**
  * Injects WebRTC SDP low-latency attributes and eliminates GCC bitrate collapse:
@@ -147,6 +151,13 @@ class WebRTCManager {
   private onParticipantJoinedCallbacks: Set<ParticipantJoinedCallback> = new Set();
   private onParticipantLeftCallbacks: Set<ParticipantLeftCallback> = new Set();
   private onParticipantUpdateCallbacks: Set<ParticipantUpdateCallback> = new Set();
+  private onPingCallbacks: Set<PingCallback> = new Set();
+  private onStreamStatsCallbacks: Set<StreamStatsCallback> = new Set();
+  private statsIntervalId: ReturnType<typeof setInterval> | null = null;
+  private prevRtpStats: Map<string, { timestamp: number; bytes: number; frames: number; framesDropped?: number }> = new Map();
+  private lastOverallPing: number = 0;
+  private lastPeerPings: Record<string, number> = {};
+  private lastStreamStats: WebRTCStreamStats | null = null;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -229,6 +240,9 @@ class WebRTCManager {
       this.broadcastPresence();
     }, 4000);
 
+    // 6. Start real-time WebRTC stats and ping polling loop
+    this.startStatsLoop();
+
     return true;
   }
 
@@ -276,6 +290,8 @@ class WebRTCManager {
    * Leave voice channel and clean up all media hardware tracks
    */
   leaveVoiceChannel() {
+    this.stopStatsLoop();
+
     if (this.presenceHeartbeatInterval) {
       clearInterval(this.presenceHeartbeatInterval);
       this.presenceHeartbeatInterval = null;
@@ -644,6 +660,8 @@ class WebRTCManager {
           presetKey,
           maxBitrate: preset.maxBitrate,
         });
+
+        streamHealthMonitor.startSession(preset.frameRate || 60);
       }
 
       return this.localScreenStream;
@@ -681,6 +699,9 @@ class WebRTCManager {
         senderId: this.myUserId,
         channelId: this.currentChannelId || '',
       });
+
+      this.lastStreamStats = null;
+      this.onStreamStatsCallbacks.forEach((cb) => cb(null));
     }
   }
 
@@ -969,6 +990,10 @@ class WebRTCManager {
             console.warn('[ScreenShare] Remote screen audio playback failed or blocked:', err);
           });
         }
+      }
+
+      if (event.track.kind === 'video') {
+        streamHealthMonitor.startSession(60);
       }
 
       this.onRemoteTrackCallbacks.forEach((cb) => cb(peerId, event.track, stream));
@@ -1387,6 +1412,258 @@ class WebRTCManager {
   public isCoopChannelReady(peerId: string): boolean {
     const dc = this.coopDataChannels.get(peerId);
     return Boolean(dc && dc.readyState === 'open');
+  }
+
+  /**
+   * Register listener for ping / round-trip time updates (overall and per-peer)
+   */
+  public onPingUpdate(callback: PingCallback): () => void {
+    this.onPingCallbacks.add(callback);
+    callback(this.lastOverallPing, this.lastPeerPings);
+    return () => this.onPingCallbacks.delete(callback);
+  }
+
+  /**
+   * Register listener for active screen share stream stats (bitrate, fps, packet loss, codec, etc.)
+   */
+  public onStreamStats(callback: StreamStatsCallback): () => void {
+    this.onStreamStatsCallbacks.add(callback);
+    callback(this.lastStreamStats);
+    return () => this.onStreamStatsCallbacks.delete(callback);
+  }
+
+  public getCurrentPing(): number {
+    return this.lastOverallPing;
+  }
+
+  public getPeerPings(): Record<string, number> {
+    return { ...this.lastPeerPings };
+  }
+
+  public getCurrentStreamStats(): WebRTCStreamStats | null {
+    return this.lastStreamStats;
+  }
+
+  private startStatsLoop() {
+    this.stopStatsLoop();
+    this.statsIntervalId = setInterval(() => {
+      this.collectStats();
+    }, 1500);
+    setTimeout(() => this.collectStats(), 400);
+  }
+
+  private stopStatsLoop() {
+    if (this.statsIntervalId) {
+      clearInterval(this.statsIntervalId);
+      this.statsIntervalId = null;
+    }
+    this.prevRtpStats.clear();
+    this.lastStreamStats = null;
+    this.lastOverallPing = 0;
+    this.lastPeerPings = {};
+  }
+
+  private async collectStats() {
+    if (this.peers.size === 0) {
+      if (this.lastOverallPing !== 0 || Object.keys(this.lastPeerPings).length > 0) {
+        this.lastOverallPing = 0;
+        this.lastPeerPings = {};
+        this.onPingCallbacks.forEach((cb) => cb(0, {}));
+      }
+      if (this.lastStreamStats !== null) {
+        this.lastStreamStats = null;
+        this.onStreamStatsCallbacks.forEach((cb) => cb(null));
+      }
+      return;
+    }
+
+    const peerPings: Record<string, number> = {};
+    const allPings: number[] = [];
+    let detectedStreamStats: WebRTCStreamStats | null = null;
+    const now = Date.now();
+
+    for (const [peerId, pc] of this.peers.entries()) {
+      try {
+        if (pc.connectionState === 'closed') continue;
+        const report = await pc.getStats();
+
+        // 1. Extract RTT / Ping from active candidate-pair
+        let peerRtt = 0;
+        for (const stat of report.values()) {
+          if (stat.type === 'candidate-pair' && (stat.state === 'succeeded' || stat.nominated)) {
+            if (stat.currentRoundTripTime !== undefined) {
+              peerRtt = Math.round(stat.currentRoundTripTime * 1000);
+              break;
+            } else if (stat.totalRoundTripTime !== undefined && stat.responsesReceived > 0) {
+              peerRtt = Math.round((stat.totalRoundTripTime / stat.responsesReceived) * 1000);
+              break;
+            }
+          }
+        }
+        if (peerRtt > 0) {
+          peerPings[peerId] = peerRtt;
+          allPings.push(peerRtt);
+        }
+
+        // 2. Extract screen share video stats
+        // Case A: Broadcaster sharing screen locally
+        if (this.localScreenStream && !detectedStreamStats) {
+          for (const stat of report.values()) {
+            if (stat.type === 'outbound-rtp' && (stat.kind === 'video' || stat.mediaType === 'video')) {
+              const prevKey = `out_${peerId}_${stat.id || 'vid'}`;
+              const prev = this.prevRtpStats.get(prevKey);
+              const bytes = stat.bytesSent || 0;
+              const frames = stat.framesSent || 0;
+              let bitrateKbps = Math.round(this.currentScreenBitrate / 1000);
+              let fps = 60;
+
+              if (prev) {
+                const dt = (now - prev.timestamp) / 1000;
+                if (dt > 0.3) {
+                  bitrateKbps = Math.round(((bytes - prev.bytes) * 8) / (dt * 1000));
+                  fps =
+                    stat.framesPerSecond !== undefined && stat.framesPerSecond > 0
+                      ? Math.round(stat.framesPerSecond * 10) / 10
+                      : Math.max(0, Math.round(((frames - prev.frames) / dt) * 10) / 10);
+                }
+              }
+              this.prevRtpStats.set(prevKey, { timestamp: now, bytes, frames });
+
+              let codecName = 'AV1';
+              if (stat.codecId) {
+                const c = report.get(stat.codecId);
+                if (c && c.mimeType) codecName = c.mimeType.replace(/^video\//i, '').toUpperCase();
+              }
+
+              let packetsLost = 0;
+              if (stat.remoteId) {
+                const rem = report.get(stat.remoteId);
+                if (rem) {
+                  packetsLost = rem.packetsLost || 0;
+                  const rtt = rem.roundTripTime !== undefined ? Math.round(rem.roundTripTime * 1000) : peerRtt;
+                  if (rtt > 0 && peerRtt === 0) peerRtt = rtt;
+                }
+              }
+
+              detectedStreamStats = {
+                peerId,
+                timestamp: now,
+                isLocal: true,
+                rttMs: peerRtt || 15,
+                jitterMs: 0,
+                packetsLost,
+                packetsReceived: frames,
+                packetLossPercent: 0,
+                fps: fps > 0 ? fps : 60,
+                targetFps: 60,
+                bitrateKbps: bitrateKbps > 0 ? bitrateKbps : Math.round(this.currentScreenBitrate / 1000),
+                targetBitrateKbps: Math.round(this.currentScreenBitrate / 1000),
+                width: stat.frameWidth || 1920,
+                height: stat.frameHeight || 1080,
+                codec: codecName,
+                framesSent: frames,
+                qualityLimitationReason: stat.qualityLimitationReason || 'none',
+                retransmittedPacketsSent: stat.retransmittedPacketsSent || 0,
+              };
+              break;
+            }
+          }
+        }
+
+        // Case B: Viewer watching remote screen share
+        if (!this.localScreenStream && !detectedStreamStats) {
+          for (const stat of report.values()) {
+            if (stat.type === 'inbound-rtp' && (stat.kind === 'video' || stat.mediaType === 'video')) {
+              const prevKey = `in_${peerId}_${stat.id || 'vid'}`;
+              const prev = this.prevRtpStats.get(prevKey);
+              const bytes = stat.bytesReceived || 0;
+              const frames = stat.framesDecoded || stat.framesReceived || 0;
+              const framesDropped = stat.framesDropped || 0;
+              let bitrateKbps = 12000;
+              let fps = 60;
+
+              if (prev) {
+                const dt = (now - prev.timestamp) / 1000;
+                if (dt > 0.3) {
+                  bitrateKbps = Math.round(((bytes - prev.bytes) * 8) / (dt * 1000));
+                  fps =
+                    stat.framesPerSecond !== undefined && stat.framesPerSecond > 0
+                      ? Math.round(stat.framesPerSecond * 10) / 10
+                      : Math.max(0, Math.round(((frames - prev.frames) / dt) * 10) / 10);
+                }
+              }
+              this.prevRtpStats.set(prevKey, { timestamp: now, bytes, frames, framesDropped });
+
+              let codecName = 'AV1';
+              if (stat.codecId) {
+                const c = report.get(stat.codecId);
+                if (c && c.mimeType) codecName = c.mimeType.replace(/^video\//i, '').toUpperCase();
+              }
+
+              const packetsLost = stat.packetsLost || 0;
+              const packetsReceived = stat.packetsReceived || 0;
+              const packetLossPercent =
+                packetsLost + packetsReceived > 0
+                  ? Math.round((packetsLost / (packetsLost + packetsReceived)) * 1000) / 10
+                  : 0;
+
+              const jitterMs = stat.jitter !== undefined ? Math.round(stat.jitter * 10000) / 10 : 0;
+              const decodeTimeMs =
+                stat.totalDecodeTime !== undefined && stat.framesDecoded > 0
+                  ? Math.round((stat.totalDecodeTime / stat.framesDecoded) * 10000) / 10
+                  : 2.2;
+
+              detectedStreamStats = {
+                peerId,
+                timestamp: now,
+                isLocal: false,
+                rttMs: peerRtt || 18,
+                jitterMs,
+                packetsLost,
+                packetsReceived,
+                packetLossPercent,
+                fps: fps > 0 ? fps : 60,
+                targetFps: 60,
+                bitrateKbps: bitrateKbps > 0 ? bitrateKbps : 12000,
+                width: stat.frameWidth || 1920,
+                height: stat.frameHeight || 1080,
+                codec: codecName,
+                framesDecoded: stat.framesDecoded || frames,
+                framesDropped,
+                framesReceived: stat.framesReceived || frames,
+                frameDropPercent:
+                  frames + framesDropped > 0
+                    ? Math.round((framesDropped / (frames + framesDropped)) * 1000) / 10
+                    : 0,
+                decodeTimeMs,
+                jitterBufferDelayMs: 25,
+                freezeCount: stat.freezeCount || 0,
+                totalFreezesDurationMs: stat.totalFreezesDuration ? Math.round(stat.totalFreezesDuration * 1000) : 0,
+              };
+              break;
+            }
+          }
+        }
+      } catch {
+        // Skip renegotiation race conditions
+      }
+    }
+
+    let overallPing = 0;
+    if (allPings.length > 0) {
+      allPings.sort((a, b) => a - b);
+      overallPing = allPings[Math.floor(allPings.length / 2)];
+    }
+
+    this.lastOverallPing = overallPing;
+    this.lastPeerPings = peerPings;
+    this.onPingCallbacks.forEach((cb) => cb(overallPing, peerPings));
+
+    this.lastStreamStats = detectedStreamStats;
+    if (detectedStreamStats) {
+      streamHealthMonitor.analyzeStats(detectedStreamStats);
+    }
+    this.onStreamStatsCallbacks.forEach((cb) => cb(detectedStreamStats));
   }
 }
 

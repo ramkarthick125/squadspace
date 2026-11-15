@@ -170,6 +170,9 @@ export interface ElectronAPI {
   ) => () => void;
   checkForUpdates?: () => Promise<any>;
   restartAndInstallUpdate?: () => void;
+
+  // Stream Diagnostics Persistent Disk Logger
+  appendDiagnosticLog?: (entry: any) => void;
 }
 
 declare global {

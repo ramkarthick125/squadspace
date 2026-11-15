@@ -5,12 +5,16 @@ import { ScreenSharePreset, VoiceEngineMode } from '../lib/livekit';
 import { sounds } from '../lib/soundEffects';
 import { realtimeService } from '../lib/realtimeService';
 import { useAuthStore } from './useAuthStore';
+import { WebRTCStreamStats } from '../types/streamStats';
 
 interface VoiceState {
   activeVoiceChannelId: string | null;
   connectionState: 'disconnected' | 'connecting' | 'connected';
   engineMode: VoiceEngineMode;
   streamQuality: ScreenSharePreset;
+  currentPing: number;
+  peerPings: Record<string, number>;
+  streamStats: WebRTCStreamStats | null;
   isMuted: boolean;
   isDeafened: boolean;
   isScreenSharing: boolean;
@@ -41,6 +45,8 @@ let remoteTrackUnsub: (() => void) | null = null;
 let participantJoinedUnsub: (() => void) | null = null;
 let participantLeftUnsub: (() => void) | null = null;
 let participantUpdateUnsub: (() => void) | null = null;
+let pingUnsub: (() => void) | null = null;
+let streamStatsUnsub: (() => void) | null = null;
 const playedJoinChimeUserIds = new Set<string>();
 
 const getInitialMuted = (): boolean => {
@@ -66,6 +72,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   connectionState: 'disconnected',
   engineMode: 'p2p', // 100% Free direct P2P mesh by default
   streamQuality: '1080p-60', // 1080p @ 60 FPS 12 Mbps default
+  currentPing: 0,
+  peerPings: {},
+  streamStats: null,
   isMuted: getInitialMuted(),
   isDeafened: getInitialDeafened(),
   isScreenSharing: false,
@@ -221,6 +230,16 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       set(newState);
     });
 
+    if (pingUnsub) pingUnsub();
+    pingUnsub = webrtcManager.onPingUpdate((overallPing, peerPings) => {
+      set({ currentPing: overallPing, peerPings });
+    });
+
+    if (streamStatsUnsub) streamStatsUnsub();
+    streamStatsUnsub = webrtcManager.onStreamStats((streamStats) => {
+      set({ streamStats });
+    });
+
     let updated = { ...participantsByChannel };
     if (activeVoiceChannelId && activeVoiceChannelId !== channelId) {
       updated[activeVoiceChannelId] = (updated[activeVoiceChannelId] || []).filter(
@@ -305,6 +324,14 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       participantUpdateUnsub();
       participantUpdateUnsub = null;
     }
+    if (pingUnsub) {
+      pingUnsub();
+      pingUnsub = null;
+    }
+    if (streamStatsUnsub) {
+      streamStatsUnsub();
+      streamStatsUnsub = null;
+    }
 
     const updated = {
       ...participantsByChannel,
@@ -320,6 +347,9 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
       screenShareParticipantId: null,
       screenShareStream: null,
       micVolumeLevel: 0,
+      currentPing: 0,
+      peerPings: {},
+      streamStats: null,
       participantsByChannel: updated,
     });
 

@@ -12,14 +12,17 @@ import {
   Keyboard,
   Loader2,
   Users,
+  Info,
 } from 'lucide-react';
 import { UserProfile } from '../../types';
 import { useCoopStore } from '../../store/useCoopStore';
+import { useVoiceStore } from '../../store/useVoiceStore';
 import { coopClient } from '../../lib/coopClient';
 import { webrtcManager } from '../../lib/webrtcManager';
 import { CoopHostPanel } from './CoopHostPanel';
 import { CoopJoinModal } from './CoopJoinModal';
 import { GamepadVisualizer } from './GamepadVisualizer';
+import { StreamStatsOverlay } from './StreamStatsOverlay';
 
 interface ScreenShareVideoProps {
   stream: MediaStream | null;
@@ -53,6 +56,10 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
   const [showControls, setShowControls] = useState<boolean>(true);
   const [controlsTimeout, setControlsTimeout] = useState<ReturnType<typeof setTimeout> | null>(null);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
+  const [showStatsOverlay, setShowStatsOverlay] = useState<boolean>(false);
+  const [isStatsPinned, setIsStatsPinned] = useState<boolean>(false);
+
+  const { streamStats } = useVoiceStore();
 
   const {
     isCoopHost,
@@ -124,12 +131,12 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
     setShowControls(true);
     if (controlsTimeout) clearTimeout(controlsTimeout);
     const timeout = setTimeout(() => {
-      if (!isPanelOpen && !isJoinModalOpen) {
+      if (!isPanelOpen && !isJoinModalOpen && !isStatsPinned) {
         setShowControls(false);
       }
     }, 4000);
     setControlsTimeout(timeout);
-  }, [controlsTimeout, isPanelOpen, isJoinModalOpen]);
+  }, [controlsTimeout, isPanelOpen, isJoinModalOpen, isStatsPinned]);
 
   // Toggle Fullscreen on Container
   const handleToggleFullscreen = () => {
@@ -182,8 +189,9 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
       }}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => {
-        if (!isPanelOpen && !isJoinModalOpen) {
+        if (!isPanelOpen && !isJoinModalOpen && !isStatsPinned) {
           setShowControls(false);
+          setShowStatsOverlay(false);
         }
       }}
       tabIndex={0}
@@ -326,6 +334,27 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
             <Sparkles className="w-3 h-3" />
             <span>Direct P2P</span>
           </div>
+
+          {/* Stream Info & Diagnostics "i" Button */}
+          <button
+            type="button"
+            onMouseEnter={() => setShowStatsOverlay(true)}
+            onClick={() => {
+              setIsStatsPinned(!isStatsPinned);
+              setShowStatsOverlay(true);
+            }}
+            title="Stream Info & Diagnostics (Hover to view live FPS, Bitrate & Lag logs)"
+            className={`px-2.5 py-1 rounded-xl backdrop-blur-md border transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
+              showStatsOverlay || isStatsPinned
+                ? 'bg-discord-blurple border-discord-blurple-light text-white shadow-lg shadow-discord-blurple/30'
+                : 'bg-black/60 border-white/10 text-discord-gray-200 hover:text-white hover:bg-black/80'
+            }`}
+          >
+            <Info className="w-3.5 h-3.5 text-discord-blurple-light" />
+            <span className="font-mono text-[11px]">
+              {streamStats ? `${streamStats.fps.toFixed(0)} FPS` : 'Info'}
+            </span>
+          </button>
         </div>
       </div>
 
@@ -386,6 +415,23 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
 
         {/* Right Controls: Theater, PiP, Fullscreen */}
         <div className="flex items-center gap-2">
+          {/* Stream Diagnostics Quick "i" Button */}
+          <button
+            type="button"
+            onClick={() => {
+              setIsStatsPinned(!isStatsPinned);
+              setShowStatsOverlay(true);
+            }}
+            title="Stream Info & Diagnostics (Bitrate, Framerate & Automated Lag Log)"
+            className={`p-2 rounded-xl backdrop-blur-md border transition-all cursor-pointer ${
+              showStatsOverlay || isStatsPinned
+                ? 'bg-discord-blurple border-discord-blurple text-white shadow'
+                : 'bg-black/60 border-white/10 text-discord-gray-200 hover:text-white hover:bg-black/80'
+            }`}
+          >
+            <Info className="w-4 h-4" />
+          </button>
+
           {/* Theater / Focus Mode */}
           {onToggleTheater && (
             <button
@@ -427,6 +473,18 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Stream Stats for Nerds & Automated Diagnostics Overlay */}
+      <StreamStatsOverlay
+        stats={streamStats}
+        isOpen={showStatsOverlay || isStatsPinned}
+        isPinned={isStatsPinned}
+        onTogglePin={() => setIsStatsPinned(!isStatsPinned)}
+        onClose={() => {
+          setIsStatsPinned(false);
+          setShowStatsOverlay(false);
+        }}
+      />
     </div>
   );
 };

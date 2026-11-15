@@ -537,6 +537,21 @@ ipcMain.on('updater:restart-and-install', () => {
   }
 });
 
+// 5. Stream Diagnostics Persistent Disk Logger
+ipcMain.on('diagnostics:append-log', (_event, entry) => {
+  try {
+    const logsDir = path.join(app.getPath('userData'), 'logs');
+    if (!fs.existsSync(logsDir)) {
+      fs.mkdirSync(logsDir, { recursive: true });
+    }
+    const logFile = path.join(logsDir, 'squadspace-stream-diagnostics.log');
+    const line = `[${entry.time || new Date().toISOString()}] [${(entry.severity || 'INFO').toUpperCase()}] [${entry.category || 'GENERAL'}] ${entry.title}: ${entry.description} ${entry.metrics ? JSON.stringify(entry.metrics) : ''}\n`;
+    fs.appendFileSync(logFile, line, 'utf8');
+  } catch (err) {
+    console.warn('[Diagnostics] Failed writing to log file:', err);
+  }
+});
+
 // Single Instance Lock
 const gotTheLock = app.requestSingleInstanceLock();
 

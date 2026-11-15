@@ -10,6 +10,7 @@ import {
   MicOff,
   ScreenShare,
   Key,
+  Wifi,
 } from 'lucide-react';
 import { useServerStore } from '../../store/useServerStore';
 import { useVoiceStore } from '../../store/useVoiceStore';
@@ -38,6 +39,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
     joinVoiceChannel,
     leaveVoiceChannel,
     participantsByChannel,
+    currentPing,
   } = useVoiceStore();
 
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
@@ -393,7 +395,22 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
           <div className="flex flex-col">
             <span className="text-discord-green font-bold flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-discord-green animate-pulse" />
-              Voice Connected
+              <span>Voice Connected</span>
+              {currentPing > 0 && (
+                <span
+                  title={`Ping: ${currentPing}ms (Direct P2P Mesh)`}
+                  className={`text-[10px] font-mono px-1.5 py-0.2 rounded font-semibold flex items-center gap-0.5 ${
+                    currentPing <= 45
+                      ? 'bg-discord-green/20 text-discord-green'
+                      : currentPing <= 100
+                      ? 'bg-amber-500/20 text-amber-300'
+                      : 'bg-rose-500/20 text-rose-300'
+                  }`}
+                >
+                  <Wifi className="w-2.5 h-2.5" />
+                  {currentPing}ms
+                </span>
+              )}
             </span>
             <span className="text-discord-gray-400 text-[11px] truncate">
               {channels.find((c) => c.id === activeVoiceChannelId)?.name || 'Voice Room'}
@@ -403,7 +420,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
           <button
             onClick={() => currentUser && leaveVoiceChannel(currentUser)}
             title="Disconnect Voice"
-            className="p-1 rounded hover:bg-discord-hover text-discord-red hover:text-discord-red"
+            className="p-1 rounded hover:bg-discord-hover text-discord-red hover:text-discord-red cursor-pointer"
           >
             Disconnect
           </button>
