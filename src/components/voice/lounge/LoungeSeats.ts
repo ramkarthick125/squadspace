@@ -5,193 +5,155 @@ import { LoungeAvatar } from './LoungeAvatar';
 export interface SeatDefinition {
   id: number;
   name: string;
-  zone: 'Cinema Lounge' | 'Skyline Beanbag' | 'Conversation Pod' | 'Table 1 Squad' | 'Wall Sofa';
+  zone: 'Cinema Lounge' | 'Wall Sofa' | 'Conversation Pod' | 'Front Lounge';
   position: THREE.Vector3;
   lookAt: THREE.Vector3;
-  type: 'couch' | 'beanbag' | 'armchair' | 'stool';
+  type: 'couch' | 'armchair' | 'stool';
   color: string;
 }
 
 export const SEAT_DEFINITIONS: SeatDefinition[] = [
-  // 1. Center Cinema Purple Couches (Facing TV on left wall X = -7.28)
+  // 1. Curved Purple Cinema Couches (Facing TV on RIGHT wall at X = 7.28)
   {
     id: 1,
-    name: 'Cinema Couch 1 — Left',
+    name: 'Cinema Couch 1 — Outer',
     zone: 'Cinema Lounge',
-    position: new THREE.Vector3(-1.0, 0.22, -0.65),
-    lookAt: new THREE.Vector3(-7.28, 2.35, 0),
+    position: new THREE.Vector3(-1.8, 0.22, 1.6),
+    lookAt: new THREE.Vector3(7.28, 2.35, 0.3),
     type: 'couch',
     color: '#8b5cf6',
   },
   {
     id: 2,
-    name: 'Cinema Couch 1 — Right',
+    name: 'Cinema Couch 1 — Inner',
     zone: 'Cinema Lounge',
-    position: new THREE.Vector3(-0.2, 0.22, -0.65),
-    lookAt: new THREE.Vector3(-7.28, 2.35, 0),
+    position: new THREE.Vector3(-1.2, 0.22, 2.0),
+    lookAt: new THREE.Vector3(7.28, 2.35, 0.3),
     type: 'couch',
     color: '#8b5cf6',
   },
   {
     id: 3,
-    name: 'Cinema Couch 2 — Left',
+    name: 'Cinema Couch 2 — Top',
     zone: 'Cinema Lounge',
-    position: new THREE.Vector3(-1.0, 0.22, 1.25),
-    lookAt: new THREE.Vector3(-7.28, 2.35, 0),
+    position: new THREE.Vector3(-2.3, 0.22, 0.6),
+    lookAt: new THREE.Vector3(7.28, 2.35, 0.3),
     type: 'couch',
-    color: '#a855f7',
+    color: '#8b5cf6',
   },
   {
     id: 4,
-    name: 'Cinema Couch 2 — Right',
+    name: 'Cinema Couch 2 — Bottom',
     zone: 'Cinema Lounge',
-    position: new THREE.Vector3(-0.2, 0.22, 1.25),
-    lookAt: new THREE.Vector3(-7.28, 2.35, 0),
+    position: new THREE.Vector3(-2.3, 0.22, 0.0),
+    lookAt: new THREE.Vector3(7.28, 2.35, 0.3),
     type: 'couch',
-    color: '#a855f7',
+    color: '#8b5cf6',
   },
-
-  // 2. Elevated Window Lounge Beanbags (5 beanbags matching Image 2)
   {
     id: 5,
-    name: 'Skyline Beanbag — Purple',
-    zone: 'Skyline Beanbag',
-    position: new THREE.Vector3(4.8, 0.28, -3.0),
-    lookAt: new THREE.Vector3(-7.28, 2.35, 0),
-    type: 'beanbag',
+    name: 'Cinema Couch 3 — Inner',
+    zone: 'Cinema Lounge',
+    position: new THREE.Vector3(-1.8, 0.22, -1.0),
+    lookAt: new THREE.Vector3(7.28, 2.35, 0.3),
+    type: 'couch',
     color: '#8b5cf6',
   },
   {
     id: 6,
-    name: 'Skyline Beanbag — Gold',
-    zone: 'Skyline Beanbag',
-    position: new THREE.Vector3(4.8, 0.28, -1.8),
-    lookAt: new THREE.Vector3(-7.28, 2.35, 0),
-    type: 'beanbag',
-    color: '#eab308',
+    name: 'Cinema Couch 3 — Outer',
+    zone: 'Cinema Lounge',
+    position: new THREE.Vector3(-1.2, 0.22, -1.4),
+    lookAt: new THREE.Vector3(7.28, 2.35, 0.3),
+    type: 'couch',
+    color: '#8b5cf6',
   },
+
+  // 2. 4-Seater Magenta Sofa on Back Wall
   {
     id: 7,
-    name: 'Skyline Beanbag — Teal',
-    zone: 'Skyline Beanbag',
-    position: new THREE.Vector3(4.8, 0.28, -0.6),
-    lookAt: new THREE.Vector3(-7.28, 2.35, 0),
-    type: 'beanbag',
-    color: '#06b6d4',
+    name: 'Back Sofa — Seat 1',
+    zone: 'Wall Sofa',
+    position: new THREE.Vector3(1.0, 0.22, -4.6),
+    lookAt: new THREE.Vector3(1.0, 1.0, 0),
+    type: 'couch',
+    color: '#be185d',
   },
   {
     id: 8,
-    name: 'Skyline Beanbag — Coral',
-    zone: 'Skyline Beanbag',
-    position: new THREE.Vector3(4.8, 0.28, 0.6),
-    lookAt: new THREE.Vector3(-7.28, 2.35, 0),
-    type: 'beanbag',
-    color: '#f43f5e',
+    name: 'Back Sofa — Seat 2',
+    zone: 'Wall Sofa',
+    position: new THREE.Vector3(1.7, 0.22, -4.6),
+    lookAt: new THREE.Vector3(1.7, 1.0, 0),
+    type: 'couch',
+    color: '#be185d',
   },
   {
     id: 9,
-    name: 'Skyline Beanbag — Violet',
-    zone: 'Skyline Beanbag',
-    position: new THREE.Vector3(4.8, 0.28, 1.8),
-    lookAt: new THREE.Vector3(-7.28, 2.35, 0),
-    type: 'beanbag',
-    color: '#6366f1',
+    name: 'Back Sofa — Seat 3',
+    zone: 'Wall Sofa',
+    position: new THREE.Vector3(2.5, 0.22, -4.6),
+    lookAt: new THREE.Vector3(2.5, 1.0, 0),
+    type: 'couch',
+    color: '#be185d',
   },
-
-  // 3. Foreground Mustard Yellow Club Chairs (Red Rug X = 0.6, Z = 3.6)
   {
     id: 10,
-    name: 'Conversation Chair — North',
-    zone: 'Conversation Pod',
-    position: new THREE.Vector3(0.6, 0.22, 2.5),
-    lookAt: new THREE.Vector3(0.6, 0.5, 3.6),
-    type: 'armchair',
-    color: '#ca8a04',
+    name: 'Back Sofa — Seat 4',
+    zone: 'Wall Sofa',
+    position: new THREE.Vector3(3.2, 0.22, -4.6),
+    lookAt: new THREE.Vector3(3.2, 1.0, 0),
+    type: 'couch',
+    color: '#be185d',
   },
+
+  // 3. Mustard-Yellow Club Armchairs (Red Rug X = -4.6, Z = -2.6)
   {
     id: 11,
-    name: 'Conversation Chair — South',
+    name: 'Yellow Armchair — North',
     zone: 'Conversation Pod',
-    position: new THREE.Vector3(0.6, 0.22, 4.7),
-    lookAt: new THREE.Vector3(0.6, 0.5, 3.6),
+    position: new THREE.Vector3(-4.6, 0.22, -3.6),
+    lookAt: new THREE.Vector3(-4.6, 0.5, -2.6),
     type: 'armchair',
     color: '#ca8a04',
   },
   {
     id: 12,
-    name: 'Conversation Chair — West',
+    name: 'Yellow Armchair — South',
     zone: 'Conversation Pod',
-    position: new THREE.Vector3(-0.5, 0.22, 3.6),
-    lookAt: new THREE.Vector3(0.6, 0.5, 3.6),
+    position: new THREE.Vector3(-4.6, 0.22, -1.6),
+    lookAt: new THREE.Vector3(-4.6, 0.5, -2.6),
     type: 'armchair',
     color: '#ca8a04',
   },
   {
     id: 13,
-    name: 'Conversation Chair — East',
+    name: 'Yellow Armchair — West',
     zone: 'Conversation Pod',
-    position: new THREE.Vector3(1.7, 0.22, 3.6),
-    lookAt: new THREE.Vector3(0.6, 0.5, 3.6),
+    position: new THREE.Vector3(-5.6, 0.22, -2.6),
+    lookAt: new THREE.Vector3(-4.6, 0.5, -2.6),
     type: 'armchair',
     color: '#ca8a04',
   },
-
-  // 4. Back Corner Table 1 Squad Pod
   {
     id: 14,
-    name: 'Table 1 — North Chair',
-    zone: 'Table 1 Squad',
-    position: new THREE.Vector3(-1.8, 0.22, -4.8),
-    lookAt: new THREE.Vector3(-1.8, 0.5, -3.8),
+    name: 'Yellow Armchair — East',
+    zone: 'Conversation Pod',
+    position: new THREE.Vector3(-3.6, 0.22, -2.6),
+    lookAt: new THREE.Vector3(-4.6, 0.5, -2.6),
     type: 'armchair',
-    color: '#0d9488',
-  },
-  {
-    id: 15,
-    name: 'Table 1 — West Chair',
-    zone: 'Table 1 Squad',
-    position: new THREE.Vector3(-2.8, 0.22, -3.8),
-    lookAt: new THREE.Vector3(-1.8, 0.5, -3.8),
-    type: 'armchair',
-    color: '#0d9488',
-  },
-  {
-    id: 16,
-    name: 'Table 1 — East Chair',
-    zone: 'Table 1 Squad',
-    position: new THREE.Vector3(-0.8, 0.22, -3.8),
-    lookAt: new THREE.Vector3(-1.8, 0.5, -3.8),
-    type: 'armchair',
-    color: '#0d9488',
-  },
-  {
-    id: 17,
-    name: 'Table 1 — Stool',
-    zone: 'Table 1 Squad',
-    position: new THREE.Vector3(-1.8, 0.18, -2.8),
-    lookAt: new THREE.Vector3(-1.8, 0.5, -3.8),
-    type: 'stool',
     color: '#ca8a04',
   },
 
-  // 5. Left Wall Magenta Sofa
+  // 4. Front Teal Stool
   {
-    id: 18,
-    name: 'Side Lounge — Seat 1',
-    zone: 'Wall Sofa',
-    position: new THREE.Vector3(-5.6, 0.22, 2.2),
-    lookAt: new THREE.Vector3(0, 0.8, 2.2),
-    type: 'couch',
-    color: '#db2777',
-  },
-  {
-    id: 19,
-    name: 'Side Lounge — Seat 2',
-    zone: 'Wall Sofa',
-    position: new THREE.Vector3(-5.6, 0.22, 3.0),
-    lookAt: new THREE.Vector3(0, 0.8, 3.0),
-    type: 'couch',
-    color: '#db2777',
+    id: 15,
+    name: 'Front Stool',
+    zone: 'Front Lounge',
+    position: new THREE.Vector3(0.6, 0.18, 2.6),
+    lookAt: new THREE.Vector3(7.28, 2.35, 0.3),
+    type: 'stool',
+    color: '#0d9488',
   },
 ];
 
@@ -214,20 +176,20 @@ export class LoungeSeatManager {
 
   private buildSeatAnchors() {
     SEAT_DEFINITIONS.forEach((seat) => {
-      // Crisp white glowing circular target ring hovering right above each seat cushion (Image 2)
+      // Crisp white circular target ring hovering right above each seat cushion (matching user screenshot)
       const ringGeo = new THREE.TorusGeometry(0.18, 0.022, 12, 32);
       ringGeo.rotateX(Math.PI / 2);
 
       const ringMat = new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
-        opacity: 0.6,
+        opacity: 0.65,
       });
 
       const ringMesh = new THREE.Mesh(ringGeo, ringMat);
       ringMesh.position.copy(seat.position);
-      ringMesh.position.y += 0.38; // Hover slightly above seat cushion
-      ringMesh.userData = { seatId: seat.id, baseOpacity: 0.6 };
+      ringMesh.position.y += 0.35;
+      ringMesh.userData = { seatId: seat.id };
 
       this.anchorGroup.add(ringMesh);
       this.interactiveMeshes.push(ringMesh);
@@ -259,7 +221,7 @@ export class LoungeSeatManager {
       ringMesh.visible = false;
     }
 
-    // For remote users, spawn or update their seated avatar
+    // For remote users, spawn or update seated avatar
     if (!isLocal) {
       let avatar = this.avatarMap.get(user.id);
       if (!avatar) {
@@ -310,14 +272,12 @@ export class LoungeSeatManager {
   public syncParticipants(participants: VoiceParticipant[], currentUserId: string) {
     const currentParticipantIds = new Set(participants.map((p) => p.user?.id).filter(Boolean));
 
-    // Remove any avatars who left voice
     for (const [userId, avatar] of this.avatarMap.entries()) {
       if (!currentParticipantIds.has(userId)) {
         this.freeSeatForUser(userId);
       }
     }
 
-    // Assign remote participants to seats if not already seated
     let nextSeatIndex = 0;
     participants.forEach((p) => {
       const u = p.user;
@@ -339,7 +299,6 @@ export class LoungeSeatManager {
         }
       }
 
-      // Update speaking halo on remote avatar
       const avatar = this.avatarMap.get(u.id);
       if (avatar) {
         avatar.updateSpeaking(!!p.isSpeaking);
@@ -350,7 +309,6 @@ export class LoungeSeatManager {
   public update(delta: number) {
     const time = Date.now() * 0.003;
 
-    // Gently pulse and rotate interactive seat rings
     this.seatMeshMap.forEach((mesh) => {
       if (mesh.visible) {
         mesh.rotation.y = time * 0.8;
@@ -359,7 +317,6 @@ export class LoungeSeatManager {
       }
     });
 
-    // Update remote avatars
     this.avatarMap.forEach((avatar) => {
       avatar.update(delta);
     });

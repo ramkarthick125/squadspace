@@ -18,7 +18,6 @@ import {
   Eye,
   Move,
   X,
-  Volume2,
 } from 'lucide-react';
 import { Channel, UserProfile, VoiceParticipant } from '../../../types';
 import { LoungeScene } from './LoungeScene';
@@ -79,21 +78,20 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
   const [showShortcutsModal, setShowShortcutsModal] = useState<boolean>(false);
   const [chatMessage, setChatMessage] = useState<string>('');
 
-  // Outfit selection state (stored in localStorage)
+  // Outfit selection state (persisted in localStorage)
   const [outfit, setOutfit] = useState(() => {
     try {
       const saved = localStorage.getItem('squadspace_lounge_outfit');
       if (saved) return JSON.parse(saved);
     } catch {}
     return {
-      shirt: '#0d9488', // Teal
-      pants: '#1e293b', // Dark Denim
-      hair: '#3b2318',  // Chestnut
-      skin: '#f5c096',  // Warm Sand
+      shirt: '#0f766e', // Teal t-shirt (matching user screenshot)
+      pants: '#4d7c0f', // Olive green cargo shorts (matching user screenshot)
+      hair: '#54321d',  // Chestnut brown hair
+      skin: '#dca67a',  // Warm skin tone
     };
   });
 
-  // Cross-tab & network broadcast channel
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
 
   // Initialize Three.js scene, Avatar, and Render Loop
@@ -115,18 +113,20 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // 2. Camera: Default Third-Person Follow Angle behind player (Image 1)
+    // 2. Camera: Positioned matching the user's screenshot view
     const camera = new THREE.PerspectiveCamera(46, width / height, 0.1, 90);
-    camera.position.set(2.8, 2.5, 3.8);
+    camera.position.set(-0.2, 2.8, 5.0);
     cameraRef.current = camera;
 
-    // 3. Orbit Controls (Click or middle click to look around, Image 1)
+    // 3. Orbit Controls (Completely free 360° mouse look with zero fighting)
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    controls.target.set(0.5, 1.0, 0.3);
+    controls.rotateSpeed = 0.85;
+    controls.target.set(0.0, 1.1, 0.4);
     controls.maxPolarAngle = Math.PI / 2.05;
-    controls.minDistance = 2.0;
+    controls.minPolarAngle = 0.15;
+    controls.minDistance = 1.8;
     controls.maxDistance = 22.0;
     controlsRef.current = controls;
 
@@ -161,7 +161,7 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     );
     playerControllerRef.current = playerController;
 
-    // Broadcast position updates to peers
+    // Broadcast synchronization across local tabs and network
     try {
       const bc = new BroadcastChannel('squadspace_lounge_sync');
       broadcastChannelRef.current = bc;
@@ -291,23 +291,17 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
       setNearestSeat(playerController.nearestSeat);
       setIsRunning(playerController.isRunning);
 
-      // Camera Follow Mode (Follows avatar smoothly, Image 1)
-      if (cameraView === 'follow' && !playerController.isSitting) {
+      // Smooth Follow Mode: Translates camera along with the avatar's movement WITHOUT fighting orbit angle!
+      if (cameraView === 'follow') {
         const avatarPos = localAvatar.group.position;
-        // Keep camera behind the character
-        const camAngle = localAvatar.group.rotation.y;
-        const dist = 3.6;
-        const camTargetPos = new THREE.Vector3(
-          avatarPos.x - Math.sin(camAngle) * dist + 0.8,
-          avatarPos.y + 2.1,
-          avatarPos.z - Math.cos(camAngle) * dist + 1.2
-        );
+        const desiredTarget = new THREE.Vector3(avatarPos.x, avatarPos.y + 1.1, avatarPos.z);
+        const targetDelta = desiredTarget.clone().sub(controls.target);
 
-        camera.position.lerp(camTargetPos, 4 * delta);
-        controls.target.lerp(
-          new THREE.Vector3(avatarPos.x, avatarPos.y + 1.1, avatarPos.z),
-          6 * delta
-        );
+        // Only translate camera when avatar actually moves
+        if (targetDelta.lengthSq() > 0.000001) {
+          controls.target.add(targetDelta);
+          camera.position.add(targetDelta);
+        }
       }
 
       controls.update();
@@ -397,14 +391,15 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
   const setViewMode = (mode: 'follow' | 'iso' | 'tv') => {
     setCameraView(mode);
     if (mode === 'iso') {
-      animateCameraTo(new THREE.Vector3(10.5, 8.2, 10.5), new THREE.Vector3(-0.6, 1.2, 0.3));
+      animateCameraTo(new THREE.Vector3(-1.0, 8.5, 9.5), new THREE.Vector3(0.0, 1.2, 0.4));
     } else if (mode === 'tv') {
-      animateCameraTo(new THREE.Vector3(0.5, 2.35, 0), new THREE.Vector3(-7.28, 2.35, 0));
+      // Focus TV on RIGHT wall at X = 7.28
+      animateCameraTo(new THREE.Vector3(0.0, 2.35, 0.3), new THREE.Vector3(7.28, 2.35, 0.3));
     } else if (mode === 'follow' && playerControllerRef.current) {
       const avatarPos = playerControllerRef.current.avatar.group.position;
       animateCameraTo(
-        new THREE.Vector3(avatarPos.x + 1.2, avatarPos.y + 2.1, avatarPos.z + 3.2),
-        new THREE.Vector3(avatarPos.x, avatarPos.y + 1.0, avatarPos.z)
+        new THREE.Vector3(avatarPos.x - 0.2, avatarPos.y + 2.8, avatarPos.z + 5.0),
+        new THREE.Vector3(avatarPos.x, avatarPos.y + 1.1, avatarPos.z)
       );
     }
   };
@@ -534,16 +529,11 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
         </div>
       </div>
 
-      {/* Center "Click or middle click to look" Floating Hint Pill (Image 1) */}
-      <div className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md text-gray-300 text-[11px] font-medium px-4 py-1.5 rounded-full border border-white/10 shadow-lg pointer-events-none">
-        Click or middle click to look
-      </div>
-
-      {/* Proximity Sit Prompt (Press E) */}
+      {/* Proximity Sit Prompt Pill: `[ E ] Sit` (Matching user screenshot exactly!) */}
       {!isSitting && nearestSeat && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/85 backdrop-blur-md text-white text-xs px-5 py-2 rounded-full border border-emerald-400 shadow-2xl pointer-events-none animate-pulse flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: nearestSeat.color }} />
-          <span>Press <strong>E</strong> or click to sit in <strong>{nearestSeat.name}</strong></span>
+        <div className="absolute bottom-28 left-1/2 -translate-x-1/2 bg-black/85 backdrop-blur-md text-white text-xs px-3.5 py-1.5 rounded-xl border border-white/20 shadow-2xl pointer-events-none flex items-center gap-2">
+          <span className="bg-white/20 px-1.5 py-0.5 rounded text-[11px] font-mono font-bold text-emerald-400">E</span>
+          <span className="font-semibold text-gray-200">Sit</span>
         </div>
       )}
 
@@ -570,8 +560,8 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
         </div>
       )}
 
-      {/* BOTTOM ACTIONS BAR: Exact micup Dock Layout (Matching Image 1) */}
-      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-3 z-10 max-w-[96vw]">
+      {/* BOTTOM ACTIONS BAR: Exact micup Dock Layout (Matching user screenshot) */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 z-10 max-w-[96vw]">
         {/* Main Floating Action Dock */}
         <div className="flex items-center bg-black/80 backdrop-blur-xl px-2 py-1.5 rounded-2xl border border-white/15 shadow-2xl gap-0.5 sm:gap-1">
           {/* 1 Wave */}
@@ -679,7 +669,7 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
             </span>
           </button>
 
-          {/* F Follow (Active in Follow view, Image 1) */}
+          {/* F Follow (Active in Follow view, user screenshot) */}
           <button
             onClick={() => setViewMode(cameraView === 'follow' ? 'iso' : 'follow')}
             title="Press F to toggle Follow Mode"
@@ -742,9 +732,8 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
           </button>
         </div>
 
-        {/* Quick Emoji Reactions & Chat Box (Image 1 bottom right) */}
-        <div className="hidden md:flex flex-col gap-1.5 bg-black/80 backdrop-blur-xl p-2 rounded-2xl border border-white/15 shadow-2xl w-64">
-          {/* Quick Reaction Pills */}
+        {/* Quick Emoji Reactions & Chat Box (Matching user screenshot) */}
+        <div className="hidden md:flex flex-col gap-1 bg-black/80 backdrop-blur-xl p-2 rounded-2xl border border-white/15 shadow-2xl w-64">
           <div className="flex items-center justify-between px-1">
             {['😄', '😮', '😡', '🤬', '❤️', '👍', '🥳', '🔥'].map((em) => (
               <button
@@ -758,7 +747,6 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
             ))}
           </div>
 
-          {/* "Say something" Input Box (Image 1) */}
           <form onSubmit={handleSendChat} className="flex items-center gap-1.5 bg-white/10 rounded-xl px-2.5 py-1">
             <input
               type="text"
@@ -778,7 +766,7 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
         </div>
       </div>
 
-      {/* Outfit Customizer Modal ("Outfit O", Image 1) */}
+      {/* Outfit Customizer Modal ("Outfit O", user screenshot) */}
       {showOutfitModal && (
         <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div className="bg-[#181226] border border-white/15 rounded-3xl p-6 w-full max-w-sm shadow-2xl text-white">
@@ -795,13 +783,12 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
               </button>
             </div>
 
-            {/* Shirt Color */}
             <div className="mb-4">
               <label className="text-xs text-gray-300 font-semibold mb-2 block">T-Shirt Color</label>
               <div className="flex items-center gap-2">
                 {[
-                  { name: 'Teal', col: '#0d9488' },
-                  { name: 'Pink', col: '#ec4899' },
+                  { name: 'Teal', col: '#0f766e' },
+                  { name: 'Magenta', col: '#d946ef' },
                   { name: 'Indigo', col: '#6366f1' },
                   { name: 'Amber', col: '#f59e0b' },
                   { name: 'Emerald', col: '#10b981' },
@@ -820,16 +807,15 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
               </div>
             </div>
 
-            {/* Pants Color */}
             <div className="mb-4">
-              <label className="text-xs text-gray-300 font-semibold mb-2 block">Pants / Shorts Color</label>
+              <label className="text-xs text-gray-300 font-semibold mb-2 block">Shorts / Pants Color</label>
               <div className="flex items-center gap-2">
                 {[
+                  { name: 'Olive Green', col: '#4d7c0f' },
                   { name: 'Denim', col: '#1e293b' },
-                  { name: 'Black', col: '#0f172a' },
+                  { name: 'Slate', col: '#334155' },
                   { name: 'Khaki', col: '#78716c' },
-                  { name: 'White', col: '#f1f5f9' },
-                  { name: 'Green', col: '#064e3b' },
+                  { name: 'Black', col: '#0f172a' },
                 ].map((item) => (
                   <button
                     key={item.col}
@@ -844,12 +830,11 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
               </div>
             </div>
 
-            {/* Hair Color */}
             <div className="mb-4">
               <label className="text-xs text-gray-300 font-semibold mb-2 block">Hair Color</label>
               <div className="flex items-center gap-2">
                 {[
-                  { name: 'Chestnut', col: '#3b2318' },
+                  { name: 'Chestnut Brown', col: '#54321d' },
                   { name: 'Jet Black', col: '#171717' },
                   { name: 'Blonde', col: '#eab308' },
                   { name: 'Ginger', col: '#c2410c' },
@@ -868,12 +853,11 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
               </div>
             </div>
 
-            {/* Skin Tone */}
             <div className="mb-6">
               <label className="text-xs text-gray-300 font-semibold mb-2 block">Skin Tone</label>
               <div className="flex items-center gap-2">
                 {[
-                  { name: 'Warm Sand', col: '#f5c096' },
+                  { name: 'Warm Natural', col: '#dca67a' },
                   { name: 'Light', col: '#ffd7ba' },
                   { name: 'Golden Olive', col: '#d4a373' },
                   { name: 'Caramel', col: '#a2704f' },
@@ -902,7 +886,7 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
         </div>
       )}
 
-      {/* Shortcuts Modal (Image 1 "? Shortcuts") */}
+      {/* Shortcuts Modal */}
       {showShortcutsModal && (
         <div className="absolute inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div className="bg-[#181226] border border-white/15 rounded-3xl p-6 w-full max-w-sm shadow-2xl text-white">
@@ -969,7 +953,7 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
                 <span className="font-mono bg-white/15 px-2 py-0.5 rounded text-white font-bold">O</span>
               </div>
               <div className="flex items-center justify-between py-1">
-                <span className="text-gray-300">Free Look Around</span>
+                <span className="text-gray-300">Free 360° Look Around</span>
                 <span className="font-mono bg-white/15 px-2 py-0.5 rounded text-white font-bold">Mouse Drag</span>
               </div>
             </div>

@@ -39,9 +39,9 @@ export class LoungePlayerController {
     this.seatManager = seatManager;
     this.camera = camera;
 
-    // Start in the center of the lounge, facing the TV (left wall)
-    this.avatar.group.position.set(0.5, 0, 0.3);
-    this.avatar.group.rotation.y = -Math.PI / 2;
+    // Start in the center of the lounge, facing front towards the camera (matching user screenshot)
+    this.avatar.group.position.set(0.0, 0, 0.4);
+    this.avatar.group.rotation.y = 0;
     this.bindEvents();
   }
 
@@ -51,7 +51,6 @@ export class LoungePlayerController {
   }
 
   private handleKeyDown = (e: KeyboardEvent) => {
-    // Ignore input if user is typing in a text field
     const target = e.target as HTMLElement;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
       return;
@@ -79,12 +78,10 @@ export class LoungePlayerController {
       this.keys.run = true;
     }
 
-    // Space to stand up
     if (e.code === 'Space') {
       if (this.isSitting) this.standUp();
     }
 
-    // E to interact / sit / stand up
     if (key === 'e') {
       if (this.isSitting) {
         this.standUp();
@@ -93,13 +90,10 @@ export class LoungePlayerController {
       }
     }
 
-    // G to toggle run speed
     if (key === 'g') {
       this.isRunning = !this.isRunning;
     }
 
-    // Emote hotkeys matching Image 1:
-    // 1: Wave, 2: Dance, t: Slap, b: Point, k: Wrestle/Cheers, 4: Laugh
     if (key === '1') this.playEmote('Wave');
     if (key === '2') this.playEmote('Dance');
     if (key === 't') this.playEmote('Slap');
@@ -140,7 +134,6 @@ export class LoungePlayerController {
     this.avatar.setSitting(false);
     this.seatManager.standUp();
 
-    // Step slightly forward from chair
     const forwardDir = new THREE.Vector3(0, 0, 1).applyQuaternion(this.avatar.group.quaternion);
     this.avatar.group.position.addScaledVector(forwardDir, 0.45);
 
@@ -189,7 +182,6 @@ export class LoungePlayerController {
     this.avatar.isMoving = isMoving;
 
     if (isMoving) {
-      // Get camera horizontal forward & right vectors
       const camForward = new THREE.Vector3();
       this.camera.getWorldDirection(camForward);
       camForward.y = 0;
@@ -198,20 +190,17 @@ export class LoungePlayerController {
       const camRight = new THREE.Vector3();
       camRight.crossVectors(camForward, new THREE.Vector3(0, 1, 0)).normalize();
 
-      // Combine with input
       const moveDir = new THREE.Vector3()
         .addScaledVector(camForward, -rawMoveZ)
         .addScaledVector(camRight, rawMoveX)
         .normalize();
 
-      // Speed
       const speed = (this.keys.run || this.isRunning) ? 4.8 : 3.0;
       const step = moveDir.clone().multiplyScalar(speed * delta);
       this.avatar.group.position.add(step);
 
       // Smoothly rotate avatar towards movement direction
       const targetAngle = Math.atan2(moveDir.x, moveDir.z);
-      // Shortest angle interpolation
       let diff = targetAngle - this.avatar.group.rotation.y;
       while (diff < -Math.PI) diff += Math.PI * 2;
       while (diff > Math.PI) diff -= Math.PI * 2;
@@ -219,15 +208,8 @@ export class LoungePlayerController {
 
       // Room boundary collision
       const pos = this.avatar.group.position;
-      pos.x = THREE.MathUtils.clamp(pos.x, -6.4, 6.2);
+      pos.x = THREE.MathUtils.clamp(pos.x, -6.6, 6.4);
       pos.z = THREE.MathUtils.clamp(pos.z, -5.6, 5.0);
-
-      // Smoothly step up onto elevated window lounge platform
-      if (pos.x > 4.4 && pos.z >= -4.2 && pos.z <= 3.2) {
-        pos.y = THREE.MathUtils.lerp(pos.y, 0.32, 10 * delta); // Deck height
-      } else {
-        pos.y = THREE.MathUtils.lerp(pos.y, 0.0, 10 * delta); // Floor level
-      }
 
       this.emitState();
     }
