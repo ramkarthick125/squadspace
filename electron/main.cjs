@@ -399,6 +399,32 @@ ipcMain.handle('coop:panic-disconnect-all', () => {
   return true;
 });
 
+// 4. 3D Lounge Asset Loader (Zero-latency direct binary loading inside packaged app.asar)
+ipcMain.handle('lounge:load-model', async (_event, modelName) => {
+  try {
+    const cleanName = path.basename(modelName);
+    const candidateDirs = [
+      path.join(__dirname, '../dist/models'),
+      path.join(__dirname, '../public/models'),
+      path.join(app.getAppPath(), 'dist/models'),
+      path.join(process.resourcesPath || '', 'app.asar.unpacked/dist/models'),
+      path.join(process.resourcesPath || '', 'models'),
+    ];
+    for (const dir of candidateDirs) {
+      const fullPath = path.join(dir, cleanName);
+      if (fs.existsSync(fullPath)) {
+        const fileBuf = fs.readFileSync(fullPath);
+        return fileBuf.buffer.slice(fileBuf.byteOffset, fileBuf.byteOffset + fileBuf.byteLength);
+      }
+    }
+    console.warn('[Lounge] 3D Model not found on disk:', cleanName, candidateDirs);
+    return null;
+  } catch (err) {
+    console.error('[Lounge] Error loading 3D model:', modelName, err);
+    return null;
+  }
+});
+
 // Single Instance Lock
 const gotTheLock = app.requestSingleInstanceLock();
 

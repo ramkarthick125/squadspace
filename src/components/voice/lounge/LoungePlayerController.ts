@@ -21,7 +21,6 @@ export class LoungePlayerController {
   public currentSeatId: number | null = null;
   public isRunning: boolean = false;
 
-  // Event callbacks for network / broadcast sync
   public onStateChange?: (state: {
     position: [number, number, number];
     rotationY: number;
@@ -39,9 +38,9 @@ export class LoungePlayerController {
     this.seatManager = seatManager;
     this.camera = camera;
 
-    // Start in the center of the lounge, facing front towards the camera (matching user screenshot)
-    this.avatar.group.position.set(0.0, 0, 0.4);
-    this.avatar.group.rotation.y = 0;
+    // Start in the center of the lounge, facing the Cinema TV on the left
+    this.avatar.group.position.set(0.2, 0, 0.4);
+    this.avatar.group.rotation.y = -Math.PI / 2;
     this.bindEvents();
   }
 
@@ -79,7 +78,11 @@ export class LoungePlayerController {
     }
 
     if (e.code === 'Space') {
-      if (this.isSitting) this.standUp();
+      if (this.isSitting) {
+        this.standUp();
+      } else {
+        this.avatar.playEmote('Jump');
+      }
     }
 
     if (key === 'e') {
@@ -179,9 +182,13 @@ export class LoungePlayerController {
     if (this.keys.right) rawMoveX += 1;
 
     const isMoving = rawMoveX !== 0 || rawMoveZ !== 0;
-    this.avatar.isMoving = isMoving;
 
     if (isMoving) {
+      if (!this.avatar.isMoving && !this.avatar.currentEmote) {
+        this.avatar.playAnimation((this.keys.run || this.isRunning) ? 'Run' : 'Walk', 0.2);
+      }
+      this.avatar.isMoving = true;
+
       const camForward = new THREE.Vector3();
       this.camera.getWorldDirection(camForward);
       camForward.y = 0;
@@ -212,6 +219,11 @@ export class LoungePlayerController {
       pos.z = THREE.MathUtils.clamp(pos.z, -5.6, 5.0);
 
       this.emitState();
+    } else {
+      if (this.avatar.isMoving && !this.avatar.currentEmote) {
+        this.avatar.playAnimation('Idle', 0.25);
+      }
+      this.avatar.isMoving = false;
     }
 
     // 2. Check proximity to nearest seat for 'E' prompt

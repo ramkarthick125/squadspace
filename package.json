@@ -25,6 +25,9 @@
       "electron/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "dist/models/**/*"
+    ],
     "win": {
       "signAndEditExecutable": false,
       "target": [

@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { LoungeAssetLoader } from './LoungeAssetLoader';
 
 export interface AvatarOptions {
   userId: string;
@@ -16,43 +18,27 @@ export class LoungeAvatar {
   public displayName: string;
   public isLocal: boolean;
 
-  // Body parts for procedural animation
-  private hipsGroup: THREE.Group = new THREE.Group();
-  private torsoGroup: THREE.Group = new THREE.Group();
-  private torsoMesh!: THREE.Mesh;
-  private headGroup: THREE.Group = new THREE.Group();
-  private headMesh!: THREE.Mesh;
-  private hairGroup: THREE.Group = new THREE.Group();
-  private leftArmPivot: THREE.Group = new THREE.Group();
-  private rightArmPivot: THREE.Group = new THREE.Group();
-  private leftForearmPivot: THREE.Group = new THREE.Group();
-  private rightForearmPivot: THREE.Group = new THREE.Group();
-  private leftLegPivot: THREE.Group = new THREE.Group();
-  private rightLegPivot: THREE.Group = new THREE.Group();
-  private leftKneePivot: THREE.Group = new THREE.Group();
-  private rightKneePivot: THREE.Group = new THREE.Group();
+  // Real 3D Skeletal Mesh & Animation Mixer
+  private modelRoot: THREE.Object3D | null = null;
+  private mixer: THREE.AnimationMixer | null = null;
+  private actions: Map<string, THREE.AnimationAction> = new Map();
+  private currentAction: THREE.AnimationAction | null = null;
+  private currentActionName: string = 'Idle';
+
+  // Floating Name Badge & Overlays
   private nameSprite!: THREE.Sprite;
   private speechBubbleSprite: THREE.Sprite | null = null;
   private speechTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  // Materials for live outfit customization
-  private skinMat!: THREE.MeshStandardMaterial;
-  private shirtMat!: THREE.MeshStandardMaterial;
-  private collarMat!: THREE.MeshStandardMaterial;
-  private pantsMat!: THREE.MeshStandardMaterial;
-  private hairMat!: THREE.MeshStandardMaterial;
-  private shoeMat!: THREE.MeshStandardMaterial;
-  private shoeSoleMat!: THREE.MeshStandardMaterial;
-
   // State
   public isMoving: boolean = false;
   public isSitting: boolean = false;
+  public isRunning: boolean = false;
   public currentEmote: string | null = null;
   private emoteTimer: number = 0;
-  private animTimer: number = 0;
   public isSpeaking: boolean = false;
 
-  // Floating reactions
+  // Floating animated reactions
   private floatingEmojis: Array<{ mesh: THREE.Sprite; time: number; speed: number }> = [];
 
   constructor(options: AvatarOptions) {
@@ -60,320 +46,213 @@ export class LoungeAvatar {
     this.displayName = options.displayName;
     this.isLocal = !!options.isLocal;
 
-    this.initMaterials(options);
-    this.buildStylizedHumanoid();
     this.buildNameBadge();
+    this.load3DModel(options);
   }
 
-  private initMaterials(opt: AvatarOptions) {
-    // Warm natural stylized skin tone (matching micup reference in user screenshot)
-    this.skinMat = new THREE.MeshStandardMaterial({
-      color: opt.skinColor ?? 0xdca67a,
-      roughness: 0.55,
-      metalness: 0.05,
-    });
+  private async load3DModel(options: AvatarOptions) {
+    try {
+      const loader = LoungeAssetLoader.getInstance();
+      const gltf = await loader.loadModel('/models/character.glb');
 
-    // Dark teal t-shirt (local user) or coral/indigo (peers)
-    const defaultShirt = opt.isLocal ? 0x0f766e : 0xd946ef;
-    this.shirtMat = new THREE.MeshStandardMaterial({
-      color: opt.shirtColor ?? defaultShirt,
-      roughness: 0.65,
-    });
+      // Clone rigged skeletal mesh using Three.js SkeletonUtils
+      const model = SkeletonUtils.clone(gltf.scene);
+      this.modelRoot = model;
 
-    // White t-shirt collar ring
-    this.collarMat = new THREE.MeshStandardMaterial({
-      color: 0xf8fafc,
-      roughness: 0.5,
-    });
+      // Realistic scale (~1.8m height)
+      model.scale.set(0.58, 0.58, 0.58);
+      model.position.set(0, 0, 0);
 
-    // Olive green cargo shorts / pants (matching user screenshot!)
-    const defaultPants = opt.isLocal ? 0x4d7c0f : 0x1e293b;
-    this.pantsMat = new THREE.MeshStandardMaterial({
-      color: opt.pantsColor ?? defaultPants,
-      roughness: 0.7,
-    });
+      // Enable shadows and PBR shading
+      model.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          const mesh = child as THREE.Mesh;
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
 
-    // Styled chestnut brown hair
-    this.hairMat = new THREE.MeshStandardMaterial({
-      color: opt.hairColor ?? 0x54321d,
-      roughness: 0.75,
-    });
+          // Clone and configure materials
+          if (mesh.material) {
+            const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+            const clonedMats = mats.map((m) => {
+              const cm = (m as THREE.MeshStandardMaterial).clone();
+              cm.roughness = 0.55;
+              cm.metalness = 0.05;
+              return cm;
+            });
+            mesh.material = Array.isArray(mesh.material) ? clonedMats : clonedMats[0];
+          }
+        }
+      });
 
-    // Clean white athletic sneakers
-    this.shoeMat = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.4,
-    });
+      this.group.add(model);
 
-    this.shoeSoleMat = new THREE.MeshStandardMaterial({
-      color: 0xe2e8f0,
-      roughness: 0.7,
-    });
+      // Set up real skeletal AnimationMixer
+      this.mixer = new THREE.AnimationMixer(model);
+
+      // Index available animations
+      gltf.animations.forEach((clip) => {
+        const action = this.mixer!.clipAction(clip);
+        this.actions.set(clip.name, action);
+      });
+
+      // Start with Idle
+      const idle = this.actions.get('Idle');
+      if (idle) {
+        idle.play();
+        this.currentAction = idle;
+        this.currentActionName = 'Idle';
+      }
+
+      // Apply initial outfit if local player
+      if (options.shirtColor || options.pantsColor || options.hairColor || options.skinColor) {
+        this.setOutfit(options.shirtColor, options.pantsColor, options.hairColor, options.skinColor);
+      }
+    } catch (err) {
+      console.warn('[LoungeAvatar] Error loading 3D character model:', err);
+    }
   }
 
   public setOutfit(shirt?: string | number, pants?: string | number, hair?: string | number, skin?: string | number) {
-    if (shirt !== undefined) this.shirtMat.color.set(shirt);
-    if (pants !== undefined) this.pantsMat.color.set(pants);
-    if (hair !== undefined) this.hairMat.color.set(hair);
-    if (skin !== undefined) this.skinMat.color.set(skin);
+    if (!this.modelRoot) return;
+    this.modelRoot.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        materials.forEach((mat) => {
+          if (mat && (mat as THREE.MeshStandardMaterial).isMeshStandardMaterial) {
+            const stdMat = mat as THREE.MeshStandardMaterial;
+            const name = (stdMat.name || '').toLowerCase();
+            if (shirt !== undefined && name.includes('shirt')) {
+              stdMat.color.set(shirt);
+            } else if (pants !== undefined && name.includes('pants')) {
+              stdMat.color.set(pants);
+            } else if (hair !== undefined && name.includes('hair')) {
+              stdMat.color.set(hair);
+            } else if (skin !== undefined && name.includes('skin')) {
+              stdMat.color.set(skin);
+            }
+          }
+        });
+      }
+    });
   }
 
-  private buildStylizedHumanoid() {
-    // -------------------------------------------------------------
-    // 1. Hips (Center pivot for movement and posture)
-    // -------------------------------------------------------------
-    this.hipsGroup.position.set(0, 0.70, 0);
-    this.group.add(this.hipsGroup);
+  public playAnimation(name: string, transitionDuration: number = 0.25) {
+    if (!this.mixer || this.currentActionName === name) return;
 
-    // Rounded pelvis (pants)
-    const pelvisGeo = new THREE.CylinderGeometry(0.18, 0.16, 0.18, 20);
-    const pelvis = new THREE.Mesh(pelvisGeo, this.pantsMat);
-    this.hipsGroup.add(pelvis);
+    let targetAction = this.actions.get(name);
+    // Fallback mappings if exact name is different
+    if (!targetAction && name === 'Wave') targetAction = this.actions.get('Victory');
+    if (!targetAction && name === 'Dance') targetAction = this.actions.get('Victory');
+    if (!targetAction && name === 'Slap') targetAction = this.actions.get('Punch');
 
-    // -------------------------------------------------------------
-    // 2. Torso (Casual T-shirt with smooth curves, collar & rounded shoulders)
-    // -------------------------------------------------------------
-    this.torsoGroup.position.set(0, 0.09, 0);
+    if (!targetAction) return;
 
-    // Main chest / waist
-    const torsoGeo = new THREE.CylinderGeometry(0.20, 0.18, 0.44, 24);
-    this.torsoMesh = new THREE.Mesh(torsoGeo, this.shirtMat);
-    this.torsoMesh.position.set(0, 0.22, 0);
-    this.torsoGroup.add(this.torsoMesh);
+    if (this.currentAction) {
+      this.currentAction.fadeOut(transitionDuration);
+    }
 
-    // Rounded shoulder caps
-    const shoulderGeo = new THREE.SphereGeometry(0.10, 16, 16);
-    const shoulderL = new THREE.Mesh(shoulderGeo, this.shirtMat);
-    shoulderL.position.set(-0.21, 0.38, 0);
-    this.torsoGroup.add(shoulderL);
+    targetAction.reset();
+    targetAction.fadeIn(transitionDuration);
+    targetAction.play();
 
-    const shoulderR = new THREE.Mesh(shoulderGeo, this.shirtMat);
-    shoulderR.position.set(0.21, 0.38, 0);
-    this.torsoGroup.add(shoulderR);
-
-    // Crewneck Ribbed Collar Ring (White accent trim from user screenshot!)
-    const collarGeo = new THREE.TorusGeometry(0.095, 0.016, 12, 24);
-    collarGeo.rotateX(Math.PI / 2);
-    const collar = new THREE.Mesh(collarGeo, this.collarMat);
-    collar.position.set(0, 0.44, 0);
-    this.torsoGroup.add(collar);
-
-    this.hipsGroup.add(this.torsoGroup);
-
-    // -------------------------------------------------------------
-    // 3. Head & Stylized Face (Matching reference in user screenshot)
-    // -------------------------------------------------------------
-    this.headGroup.position.set(0, 0.58, 0);
-    this.hipsGroup.add(this.headGroup);
-
-    // Neck
-    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.085, 0.14, 16), this.skinMat);
-    neck.position.set(0, -0.04, 0);
-    this.headGroup.add(neck);
-
-    // Smooth rounded head
-    const headGeo = new THREE.SphereGeometry(0.22, 32, 24);
-    headGeo.scale(0.94, 1.05, 0.96);
-    this.headMesh = new THREE.Mesh(headGeo, this.skinMat);
-    this.headMesh.position.set(0, 0.12, 0);
-    this.headGroup.add(this.headMesh);
-
-    // Stylized 3D Nose Bump (Faces +Z forward)
-    const noseGeo = new THREE.CapsuleGeometry(0.024, 0.04, 8, 12);
-    const nose = new THREE.Mesh(noseGeo, this.skinMat);
-    nose.rotation.x = Math.PI / 4;
-    nose.position.set(0, 0.11, 0.212);
-    this.headGroup.add(nose);
-
-    // Stylized 3D Ears
-    const earGeo = new THREE.SphereGeometry(0.045, 16, 12);
-    earGeo.scale(0.4, 1.0, 0.8);
-    const earL = new THREE.Mesh(earGeo, this.skinMat);
-    earL.position.set(-0.21, 0.12, 0.0);
-    this.headGroup.add(earL);
-
-    const earR = new THREE.Mesh(earGeo, this.skinMat);
-    earR.position.set(0.21, 0.12, 0.0);
-    this.headGroup.add(earR);
-
-    // Stylized Cartoon Eyes (White Sclera + Dark Pupils + White Highlights)
-    const createEye = (isLeft: boolean) => {
-      const eyeGroup = new THREE.Group();
-      eyeGroup.position.set(isLeft ? -0.065 : 0.065, 0.13, 0.198);
-
-      // White sclera
-      const scleraGeo = new THREE.SphereGeometry(0.032, 16, 16);
-      scleraGeo.scale(1.0, 1.25, 0.4);
-      const sclera = new THREE.Mesh(scleraGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
-      eyeGroup.add(sclera);
-
-      // Black pupil
-      const pupilGeo = new THREE.SphereGeometry(0.019, 12, 12);
-      pupilGeo.scale(1.0, 1.2, 0.3);
-      const pupil = new THREE.Mesh(pupilGeo, new THREE.MeshBasicMaterial({ color: 0x111827 }));
-      pupil.position.set(0, 0, 0.012);
-      eyeGroup.add(pupil);
-
-      // White sparkle highlight
-      const glintGeo = new THREE.SphereGeometry(0.007, 8, 8);
-      const glint = new THREE.Mesh(glintGeo, new THREE.MeshBasicMaterial({ color: 0xffffff }));
-      glint.position.set(-0.006, 0.008, 0.016);
-      eyeGroup.add(glint);
-
-      return eyeGroup;
-    };
-
-    this.headGroup.add(createEye(true));
-    this.headGroup.add(createEye(false));
-
-    // Subtle Eyebrows
-    const browMat = new THREE.MeshBasicMaterial({ color: 0x382214 });
-    const browGeo = new THREE.BoxGeometry(0.055, 0.014, 0.02);
-    const browL = new THREE.Mesh(browGeo, browMat);
-    browL.position.set(-0.065, 0.18, 0.20);
-    browL.rotation.z = 0.06;
-    this.headGroup.add(browL);
-
-    const browR = new THREE.Mesh(browGeo, browMat);
-    browR.position.set(0.065, 0.18, 0.20);
-    browR.rotation.z = -0.06;
-    this.headGroup.add(browR);
-
-    // Volumetric Sculpted Hair with Layered Locks & Sideburns (matching user screenshot)
-    this.hairGroup.position.set(0, 0.14, -0.01);
-
-    // Main hair dome
-    const hairDomeGeo = new THREE.SphereGeometry(0.23, 24, 20);
-    hairDomeGeo.scale(0.96, 1.08, 0.98);
-    const hairDome = new THREE.Mesh(hairDomeGeo, this.hairMat);
-    this.hairGroup.add(hairDome);
-
-    // Front styled bangs / swoop
-    const bangsGeo = new THREE.BoxGeometry(0.24, 0.09, 0.1);
-    const bangs = new THREE.Mesh(bangsGeo, this.hairMat);
-    bangs.position.set(0, 0.12, 0.15);
-    bangs.rotation.x = -0.22;
-    this.hairGroup.add(bangs);
-
-    // Sideburns
-    const burnGeo = new THREE.BoxGeometry(0.04, 0.12, 0.08);
-    const burnL = new THREE.Mesh(burnGeo, this.hairMat);
-    burnL.position.set(-0.21, -0.02, 0.05);
-    this.hairGroup.add(burnL);
-
-    const burnR = new THREE.Mesh(burnGeo, this.hairMat);
-    burnR.position.set(0.21, -0.02, 0.05);
-    this.hairGroup.add(burnR);
-
-    this.headGroup.add(this.hairGroup);
-
-    // -------------------------------------------------------------
-    // 4. Arms (Upper Arm with T-shirt Sleeve + Forearm with Skin + Hands)
-    // -------------------------------------------------------------
-    const createArm = (isLeft: boolean) => {
-      const armPivot = new THREE.Group();
-      armPivot.position.set(isLeft ? -0.23 : 0.23, 0.44, 0);
-
-      // Upper arm sleeve (shirt fabric)
-      const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.07, 0.18, 16), this.shirtMat);
-      sleeve.position.set(0, -0.09, 0);
-      armPivot.add(sleeve);
-
-      // Sleeve cuff
-      const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.072, 0.01, 12, 18), this.shirtMat);
-      cuff.rotation.x = Math.PI / 2;
-      cuff.position.set(0, -0.18, 0);
-      armPivot.add(cuff);
-
-      // Forearm pivot (elbow joint)
-      const forearmPivot = new THREE.Group();
-      forearmPivot.position.set(0, -0.18, 0);
-
-      // Bare forearm (skin tone)
-      const forearm = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.055, 0.18, 16), this.skinMat);
-      forearm.position.set(0, -0.09, 0);
-      forearmPivot.add(forearm);
-
-      // Stylized rounded hand with thumb
-      const handGroup = new THREE.Group();
-      handGroup.position.set(0, -0.20, 0.01);
-
-      const handGeo = new THREE.SphereGeometry(0.05, 14, 14);
-      handGeo.scale(1.0, 1.2, 0.7);
-      const hand = new THREE.Mesh(handGeo, this.skinMat);
-      handGroup.add(hand);
-
-      const thumbGeo = new THREE.CapsuleGeometry(0.016, 0.03, 6, 8);
-      const thumb = new THREE.Mesh(thumbGeo, this.skinMat);
-      thumb.position.set(isLeft ? 0.04 : -0.04, 0.01, 0.02);
-      thumb.rotation.z = isLeft ? -0.4 : 0.4;
-      handGroup.add(thumb);
-
-      forearmPivot.add(handGroup);
-      armPivot.add(forearmPivot);
-
-      if (isLeft) this.leftForearmPivot = forearmPivot;
-      else this.rightForearmPivot = forearmPivot;
-
-      return armPivot;
-    };
-
-    this.leftArmPivot = createArm(true);
-    this.rightArmPivot = createArm(false);
-    this.hipsGroup.add(this.leftArmPivot);
-    this.hipsGroup.add(this.rightArmPivot);
-
-    // -------------------------------------------------------------
-    // 5. Legs (Cargo Shorts/Pants + Knee Pivots + Sneakers with Soles)
-    // -------------------------------------------------------------
-    const createLeg = (isLeft: boolean) => {
-      const legPivot = new THREE.Group();
-      legPivot.position.set(isLeft ? -0.11 : 0.11, -0.09, 0);
-
-      // Thigh (Pants)
-      const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.085, 0.28, 16), this.pantsMat);
-      thigh.position.set(0, -0.14, 0);
-      legPivot.add(thigh);
-
-      // Knee joint pivot
-      const kneePivot = new THREE.Group();
-      kneePivot.position.set(0, -0.28, 0);
-
-      // Shin / lower leg (Pants / jogger cuffs)
-      const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.082, 0.075, 0.24, 16), this.pantsMat);
-      shin.position.set(0, -0.12, 0);
-      kneePivot.add(shin);
-
-      // Sneaker Upper (White athletic shoe, matching user screenshot)
-      const shoeGroup = new THREE.Group();
-      shoeGroup.position.set(0, -0.24, 0.04);
-
-      const shoeUpperGeo = new THREE.BoxGeometry(0.12, 0.08, 0.20);
-      const shoeUpper = new THREE.Mesh(shoeUpperGeo, this.shoeMat);
-      shoeGroup.add(shoeUpper);
-
-      // Sneaker Rubber Sole (White/Grey trim)
-      const soleGeo = new THREE.BoxGeometry(0.13, 0.035, 0.22);
-      const sole = new THREE.Mesh(soleGeo, this.shoeSoleMat);
-      sole.position.y = -0.048;
-      shoeGroup.add(sole);
-
-      kneePivot.add(shoeGroup);
-      legPivot.add(kneePivot);
-
-      if (isLeft) this.leftKneePivot = kneePivot;
-      else this.rightKneePivot = kneePivot;
-
-      return legPivot;
-    };
-
-    this.leftLegPivot = createLeg(true);
-    this.rightLegPivot = createLeg(false);
-    this.hipsGroup.add(this.leftLegPivot);
-    this.hipsGroup.add(this.rightLegPivot);
+    this.currentAction = targetAction;
+    this.currentActionName = name;
   }
 
-  // Floating Name Badge Sprite matching user screenshot: `[avatar] Ram Karthick`
+  public setSitting(isSitting: boolean, lookAtTarget?: THREE.Vector3) {
+    this.isSitting = isSitting;
+    this.isMoving = false;
+    this.currentEmote = null;
+
+    if (isSitting) {
+      // Play SitDown skeletal animation and clamp on seated pose
+      const sitAction = this.actions.get('SitDown');
+      if (sitAction) {
+        if (this.currentAction) this.currentAction.fadeOut(0.2);
+        sitAction.reset();
+        sitAction.setLoop(THREE.LoopOnce, 1);
+        sitAction.clampWhenFinished = true;
+        sitAction.fadeIn(0.2).play();
+        this.currentAction = sitAction;
+        this.currentActionName = 'SitDown';
+      }
+
+      if (lookAtTarget) {
+        const flatTarget = new THREE.Vector3(lookAtTarget.x, this.group.position.y, lookAtTarget.z);
+        this.group.lookAt(flatTarget);
+      }
+    } else {
+      // Stand back up
+      const standAction = this.actions.get('StandUp');
+      if (standAction) {
+        if (this.currentAction) this.currentAction.fadeOut(0.15);
+        standAction.reset();
+        standAction.setLoop(THREE.LoopOnce, 1);
+        standAction.fadeIn(0.15).play();
+        this.currentAction = standAction;
+        this.currentActionName = 'StandUp';
+
+        // Transition back to Idle after standing up
+        setTimeout(() => {
+          if (!this.isSitting && !this.isMoving) {
+            this.playAnimation('Idle', 0.25);
+          }
+        }, 500);
+      } else {
+        this.playAnimation('Idle', 0.2);
+      }
+    }
+  }
+
+  public playEmote(emote: string) {
+    if (this.isSitting) {
+      this.setSitting(false);
+    }
+
+    this.currentEmote = emote;
+    this.emoteTimer = 0;
+
+    if (emote === 'Wave') {
+      const victoryAction = this.actions.get('Victory');
+      if (victoryAction) {
+        this.playAnimation('Victory', 0.2);
+        victoryAction.setLoop(THREE.LoopOnce, 1);
+      }
+    } else if (emote === 'Dance' || emote === 'Cheers' || emote === 'Victory') {
+      const victoryAction = this.actions.get('Victory');
+      if (victoryAction) {
+        this.playAnimation('Victory', 0.2);
+        victoryAction.setLoop(THREE.LoopRepeat, 3);
+      }
+    } else if (emote === 'Slap' || emote === 'Punch') {
+      const punchAction = this.actions.get('Punch');
+      if (punchAction) {
+        this.playAnimation('Punch', 0.15);
+        punchAction.setLoop(THREE.LoopOnce, 1);
+      }
+    } else if (emote === 'Point') {
+      const pointAction = this.actions.get('Shoot_OneHanded');
+      if (pointAction) {
+        this.playAnimation('Shoot_OneHanded', 0.15);
+        pointAction.setLoop(THREE.LoopOnce, 1);
+      }
+    } else if (emote === 'Wrestle') {
+      const rollAction = this.actions.get('Roll');
+      if (rollAction) {
+        this.playAnimation('Roll', 0.15);
+        rollAction.setLoop(THREE.LoopOnce, 1);
+      }
+    } else if (emote === 'Jump') {
+      const jumpAction = this.actions.get('Jump');
+      if (jumpAction) {
+        this.playAnimation('Jump', 0.15);
+        jumpAction.setLoop(THREE.LoopOnce, 1);
+      }
+    }
+  }
+
+  // Floating Name Badge Sprite
   private buildNameBadge() {
     const canvas = document.createElement('canvas');
     canvas.width = 512;
@@ -393,7 +272,7 @@ export class LoungeAvatar {
     });
 
     this.nameSprite = new THREE.Sprite(spriteMat);
-    this.nameSprite.position.set(0, 1.85, 0);
+    this.nameSprite.position.set(0, 1.95, 0);
     this.nameSprite.scale.set(1.4, 0.35, 1);
     this.group.add(this.nameSprite);
   }
@@ -406,7 +285,6 @@ export class LoungeAvatar {
     const pillW = w - pad * 2;
     const radius = pillH / 2;
 
-    // Sleek dark badge
     ctx.save();
     ctx.fillStyle = 'rgba(15, 12, 24, 0.88)';
     ctx.strokeStyle = this.isSpeaking ? '#22c55e' : 'rgba(255, 255, 255, 0.18)';
@@ -417,7 +295,6 @@ export class LoungeAvatar {
     ctx.fill();
     ctx.stroke();
 
-    // User Avatar Circle Icon on left
     const avatarX = pad + radius;
     const avatarY = pad + radius;
     const avatarR = radius - 10;
@@ -429,7 +306,6 @@ export class LoungeAvatar {
     ctx.arc(avatarX, avatarY, avatarR, 0, Math.PI * 2);
     ctx.fill();
 
-    // User Initial
     const initial = (this.displayName || 'U').charAt(0).toUpperCase();
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 44px "Inter", "Segoe UI", sans-serif';
@@ -437,7 +313,6 @@ export class LoungeAvatar {
     ctx.textBaseline = 'middle';
     ctx.fillText(initial, avatarX, avatarY);
 
-    // User Display Name Text
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 36px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'left';
@@ -503,7 +378,7 @@ export class LoungeAvatar {
     texture.colorSpace = THREE.SRGBColorSpace;
     const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
     this.speechBubbleSprite = new THREE.Sprite(spriteMat);
-    this.speechBubbleSprite.position.set(0, 2.35, 0);
+    this.speechBubbleSprite.position.set(0, 2.45, 0);
     this.speechBubbleSprite.scale.set(1.8, 0.7, 1);
     this.group.add(this.speechBubbleSprite);
 
@@ -531,7 +406,7 @@ export class LoungeAvatar {
     texture.colorSpace = THREE.SRGBColorSpace;
     const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
     const sprite = new THREE.Sprite(spriteMat);
-    sprite.position.set((Math.random() - 0.5) * 0.4, 1.9, (Math.random() - 0.5) * 0.4);
+    sprite.position.set((Math.random() - 0.5) * 0.4, 2.0, (Math.random() - 0.5) * 0.4);
     sprite.scale.set(0.45, 0.45, 1);
     this.group.add(sprite);
 
@@ -542,59 +417,24 @@ export class LoungeAvatar {
     });
   }
 
-  public setSitting(isSitting: boolean, lookAtTarget?: THREE.Vector3) {
-    this.isSitting = isSitting;
-    this.isMoving = false;
-    this.currentEmote = null;
-
-    if (isSitting) {
-      // Natural sitting pose: Lower hips onto seat cushion
-      this.hipsGroup.position.set(0, 0.38, 0);
-
-      // Thighs project horizontally forward (90 deg flexion)
-      this.leftLegPivot.rotation.x = -Math.PI / 2 + 0.1;
-      this.rightLegPivot.rotation.x = -Math.PI / 2 + 0.1;
-
-      // Knees bend 90 deg down towards floor
-      this.leftKneePivot.rotation.x = Math.PI / 2;
-      this.rightKneePivot.rotation.x = Math.PI / 2;
-
-      // Arms rest naturally on thighs / lap
-      this.leftArmPivot.rotation.x = -0.4;
-      this.rightArmPivot.rotation.x = -0.4;
-      this.leftForearmPivot.rotation.x = -0.4;
-      this.rightForearmPivot.rotation.x = -0.4;
-
-      // Orient avatar face (+Z) towards target
-      if (lookAtTarget) {
-        const flatTarget = new THREE.Vector3(lookAtTarget.x, this.group.position.y, lookAtTarget.z);
-        // Note: lookAt points -Z towards target. Since avatar face is on +Z, we rotate by Math.PI!
-        this.group.lookAt(flatTarget);
-        this.group.rotateY(Math.PI);
-      }
-    } else {
-      // Reset standing pose
-      this.hipsGroup.position.set(0, 0.70, 0);
-      this.leftLegPivot.rotation.set(0, 0, 0);
-      this.rightLegPivot.rotation.set(0, 0, 0);
-      this.leftKneePivot.rotation.set(0, 0, 0);
-      this.rightKneePivot.rotation.set(0, 0, 0);
-      this.leftArmPivot.rotation.set(0, 0, 0);
-      this.rightArmPivot.rotation.set(0, 0, 0);
-      this.leftForearmPivot.rotation.set(0, 0, 0);
-      this.rightForearmPivot.rotation.set(0, 0, 0);
-    }
-  }
-
-  public playEmote(emote: string) {
-    this.currentEmote = emote;
-    this.emoteTimer = 0;
-  }
-
   public update(delta: number) {
-    this.animTimer += delta;
+    // 1. Advance real skeletal animation mixer
+    if (this.mixer) {
+      this.mixer.update(delta);
+    }
 
-    // Update floating emojis
+    // 2. Handle active emotes timeout
+    if (this.currentEmote) {
+      this.emoteTimer += delta;
+      if (this.emoteTimer > 3.0) {
+        this.currentEmote = null;
+        if (!this.isSitting) {
+          this.playAnimation(this.isMoving ? (this.isRunning ? 'Run' : 'Walk') : 'Idle', 0.25);
+        }
+      }
+    }
+
+    // 3. Update floating emojis
     for (let i = this.floatingEmojis.length - 1; i >= 0; i--) {
       const item = this.floatingEmojis[i];
       item.time += delta;
@@ -607,108 +447,11 @@ export class LoungeAvatar {
         this.floatingEmojis.splice(i, 1);
       }
     }
-
-    // 1. Sitting animation: Subtle idle breathing while seated
-    if (this.isSitting) {
-      const breath = Math.sin(this.animTimer * 2.5) * 0.02;
-      this.torsoMesh.scale.set(1.0 + breath, 1.0, 1.0 + breath);
-      this.headGroup.rotation.y = Math.sin(this.animTimer * 0.8) * 0.08;
-      return;
-    }
-
-    // 2. Emote Animations
-    if (this.currentEmote) {
-      this.emoteTimer += delta;
-      const t = this.emoteTimer;
-
-      if (this.currentEmote === 'Wave') {
-        this.rightArmPivot.rotation.z = -2.4;
-        this.rightArmPivot.rotation.x = -0.3;
-        this.rightForearmPivot.rotation.z = Math.sin(t * 12) * 0.5 - 0.2;
-        this.leftArmPivot.rotation.set(0, 0, 0);
-        this.headGroup.rotation.z = -0.1;
-      } else if (this.currentEmote === 'Dance') {
-        this.hipsGroup.position.y = 0.70 + Math.abs(Math.sin(t * 8)) * 0.08;
-        this.hipsGroup.rotation.y = Math.sin(t * 8) * 0.35;
-        this.hipsGroup.rotation.z = Math.sin(t * 4) * 0.15;
-        this.leftArmPivot.rotation.x = Math.sin(t * 8) * 0.8 - 0.4;
-        this.rightArmPivot.rotation.x = -Math.sin(t * 8) * 0.8 - 0.4;
-        this.leftArmPivot.rotation.z = 0.6;
-        this.rightArmPivot.rotation.z = -0.6;
-        this.headGroup.rotation.z = Math.sin(t * 8) * 0.2;
-      } else if (this.currentEmote === 'Slap') {
-        if (t < 0.2) {
-          this.rightArmPivot.rotation.y = 1.2;
-          this.rightArmPivot.rotation.z = -0.6;
-        } else if (t < 0.6) {
-          this.rightArmPivot.rotation.y = -1.6;
-          this.rightArmPivot.rotation.z = -0.4;
-        } else {
-          this.rightArmPivot.rotation.set(0, 0, 0);
-        }
-      } else if (this.currentEmote === 'Point') {
-        this.rightArmPivot.rotation.x = -Math.PI / 2;
-        this.rightArmPivot.rotation.y = 0.1;
-        this.rightForearmPivot.rotation.x = 0;
-      } else if (this.currentEmote === 'Wrestle' || this.currentEmote === 'Cheers') {
-        this.leftArmPivot.rotation.z = 2.4;
-        this.rightArmPivot.rotation.z = -2.4;
-        this.leftArmPivot.rotation.x = -0.2;
-        this.rightArmPivot.rotation.x = -0.2;
-        this.hipsGroup.position.y = 0.70 + Math.abs(Math.sin(t * 10)) * 0.09;
-      } else if (this.currentEmote === 'Laugh') {
-        this.headGroup.rotation.x = -0.3 + Math.sin(t * 14) * 0.1;
-        this.torsoMesh.scale.y = 1.0 + Math.sin(t * 14) * 0.04;
-        this.rightArmPivot.rotation.x = -0.5;
-        this.leftArmPivot.rotation.x = -0.5;
-      }
-
-      if (this.emoteTimer > 3.2) {
-        this.currentEmote = null;
-        this.setSitting(false);
-      }
-      return;
-    }
-
-    // 3. Walk Cycle Animation
-    if (this.isMoving) {
-      const walkSpeed = 9.0;
-      const walkCycle = this.animTimer * walkSpeed;
-
-      const armSwing = Math.sin(walkCycle) * 0.7;
-      this.leftArmPivot.rotation.x = armSwing;
-      this.rightArmPivot.rotation.x = -armSwing;
-      this.leftArmPivot.rotation.z = 0.05;
-      this.rightArmPivot.rotation.z = -0.05;
-
-      const legStride = Math.sin(walkCycle) * 0.65;
-      this.leftLegPivot.rotation.x = -legStride;
-      this.rightLegPivot.rotation.x = legStride;
-
-      this.leftKneePivot.rotation.x = Math.max(0, -legStride * 0.8);
-      this.rightKneePivot.rotation.x = Math.max(0, legStride * 0.8);
-
-      this.hipsGroup.position.y = 0.70 + Math.abs(Math.sin(walkCycle * 2)) * 0.04;
-      this.headGroup.rotation.y = Math.sin(walkCycle) * 0.04;
-    } else {
-      // 4. Idle Breathing
-      const breath = Math.sin(this.animTimer * 2.2) * 0.015;
-      this.hipsGroup.position.y = 0.70 + breath;
-      this.torsoMesh.scale.set(1.0 + breath * 0.5, 1.0, 1.0 + breath * 0.5);
-
-      this.leftArmPivot.rotation.x = THREE.MathUtils.lerp(this.leftArmPivot.rotation.x, 0, 10 * delta);
-      this.rightArmPivot.rotation.x = THREE.MathUtils.lerp(this.rightArmPivot.rotation.x, 0, 10 * delta);
-      this.leftArmPivot.rotation.z = THREE.MathUtils.lerp(this.leftArmPivot.rotation.z, 0, 10 * delta);
-      this.rightArmPivot.rotation.z = THREE.MathUtils.lerp(this.rightArmPivot.rotation.z, 0, 10 * delta);
-      this.leftLegPivot.rotation.x = THREE.MathUtils.lerp(this.leftLegPivot.rotation.x, 0, 10 * delta);
-      this.rightLegPivot.rotation.x = THREE.MathUtils.lerp(this.rightLegPivot.rotation.x, 0, 10 * delta);
-      this.leftKneePivot.rotation.x = THREE.MathUtils.lerp(this.leftKneePivot.rotation.x, 0, 10 * delta);
-      this.rightKneePivot.rotation.x = THREE.MathUtils.lerp(this.rightKneePivot.rotation.x, 0, 10 * delta);
-    }
   }
 
   public dispose() {
     if (this.speechTimeout) clearTimeout(this.speechTimeout);
+    if (this.mixer) this.mixer.stopAllAction();
     this.group.clear();
   }
 }

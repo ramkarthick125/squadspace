@@ -69,7 +69,8 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
   const [hoveredSeat, setHoveredSeat] = useState<SeatDefinition | null>(null);
   const [nearestSeat, setNearestSeat] = useState<SeatDefinition | null>(null);
   const [isSitting, setIsSitting] = useState<boolean>(false);
-  const [cameraView, setCameraView] = useState<'follow' | 'iso' | 'tv'>('follow');
+  const [cameraView, setCameraView] = useState<'follow' | 'iso' | 'tv'>('iso');
+  const cameraViewRef = useRef<'follow' | 'iso' | 'tv'>('iso');
   const [activeEmote, setActiveEmote] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState<boolean>(false);
 
@@ -113,9 +114,9 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // 2. Camera: Positioned matching the user's screenshot view
+    // 2. Camera: Positioned matching the user's penthouse panoramic view (Image 2)
     const camera = new THREE.PerspectiveCamera(46, width / height, 0.1, 90);
-    camera.position.set(-0.2, 2.8, 5.0);
+    camera.position.set(0.0, 8.8, 12.5);
     cameraRef.current = camera;
 
     // 3. Orbit Controls (Completely free 360° mouse look with zero fighting)
@@ -123,11 +124,11 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.rotateSpeed = 0.85;
-    controls.target.set(0.0, 1.1, 0.4);
+    controls.target.set(0.0, 1.2, 0.4);
     controls.maxPolarAngle = Math.PI / 2.05;
     controls.minPolarAngle = 0.15;
-    controls.minDistance = 1.8;
-    controls.maxDistance = 22.0;
+    controls.minDistance = 2.0;
+    controls.maxDistance = 26.0;
     controlsRef.current = controls;
 
     // 4. Room Scene & Cinema TV
@@ -292,12 +293,12 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
       setIsRunning(playerController.isRunning);
 
       // Smooth Follow Mode: Translates camera along with the avatar's movement WITHOUT fighting orbit angle!
-      if (cameraView === 'follow') {
+      if (cameraViewRef.current === 'follow') {
         const avatarPos = localAvatar.group.position;
         const desiredTarget = new THREE.Vector3(avatarPos.x, avatarPos.y + 1.1, avatarPos.z);
         const targetDelta = desiredTarget.clone().sub(controls.target);
 
-        // Only translate camera when avatar actually moves
+        // Translate camera smoothly as avatar moves
         if (targetDelta.lengthSq() > 0.000001) {
           controls.target.add(targetDelta);
           camera.position.add(targetDelta);
@@ -389,20 +390,37 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
   };
 
   const setViewMode = (mode: 'follow' | 'iso' | 'tv') => {
+    cameraViewRef.current = mode;
     setCameraView(mode);
     if (mode === 'iso') {
-      animateCameraTo(new THREE.Vector3(-1.0, 8.5, 9.5), new THREE.Vector3(0.0, 1.2, 0.4));
+      animateCameraTo(new THREE.Vector3(0.0, 8.8, 12.5), new THREE.Vector3(0.0, 1.2, 0.4));
     } else if (mode === 'tv') {
-      // Focus TV on RIGHT wall at X = 7.28
-      animateCameraTo(new THREE.Vector3(0.0, 2.35, 0.3), new THREE.Vector3(7.28, 2.35, 0.3));
+      // Focus Cinema TV on LEFT wall at X = -7.32, Y = 2.5, Z = -0.6
+      animateCameraTo(new THREE.Vector3(-2.8, 2.5, -0.6), new THREE.Vector3(-7.32, 2.5, -0.6));
     } else if (mode === 'follow' && playerControllerRef.current) {
       const avatarPos = playerControllerRef.current.avatar.group.position;
       animateCameraTo(
-        new THREE.Vector3(avatarPos.x - 0.2, avatarPos.y + 2.8, avatarPos.z + 5.0),
+        new THREE.Vector3(avatarPos.x, avatarPos.y + 2.2, avatarPos.z + 3.8),
         new THREE.Vector3(avatarPos.x, avatarPos.y + 1.1, avatarPos.z)
       );
     }
   };
+
+  // Keyboard shortcut listener for O (outfit), V (room view), F (follow)
+  useEffect(() => {
+    const handleLoungeKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+      const key = e.key.toLowerCase();
+      if (key === 'o') setShowOutfitModal((prev) => !prev);
+      if (key === 'v') setViewMode(cameraView === 'iso' ? 'follow' : 'iso');
+      if (key === 'f') setViewMode(cameraView === 'follow' ? 'iso' : 'follow');
+    };
+    window.addEventListener('keydown', handleLoungeKey);
+    return () => window.removeEventListener('keydown', handleLoungeKey);
+  }, [cameraView]);
 
   const handleStandUp = () => {
     if (playerControllerRef.current) {
@@ -657,10 +675,10 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
             </span>
           </button>
 
-          {/* V Eyes (Reset Camera View) */}
+          {/* V Eyes / Room View */}
           <button
-            onClick={() => setViewMode('follow')}
-            title="Press V to reset look"
+            onClick={() => setViewMode(cameraView === 'iso' ? 'follow' : 'iso')}
+            title="Press V to toggle Room Overview / Follow View"
             className="flex flex-col items-center justify-center px-2.5 py-1 rounded-xl text-gray-300 hover:text-white hover:bg-white/10 transition cursor-pointer min-w-[46px]"
           >
             <Eye className="w-3.5 h-3.5 mb-0.5" />

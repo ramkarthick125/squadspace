@@ -33,16 +33,16 @@ export class LoungeTV {
     const w = this.idleCanvas.width;
     const h = this.idleCanvas.height;
 
-    // Deep sleek dark gradient (Image 2)
+    // Deep sleek dark gradient matching Image 2
     const bgGrad = ctx.createLinearGradient(0, 0, w, h);
-    bgGrad.addColorStop(0, '#0c0a14');
-    bgGrad.addColorStop(0.5, '#151024');
-    bgGrad.addColorStop(1, '#0e0b1a');
+    bgGrad.addColorStop(0, '#0a0814');
+    bgGrad.addColorStop(0.5, '#120d22');
+    bgGrad.addColorStop(1, '#0e0b1c');
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, w, h);
 
     // Subtle dark grid
-    ctx.strokeStyle = 'rgba(139, 92, 246, 0.05)';
+    ctx.strokeStyle = 'rgba(139, 92, 246, 0.08)';
     ctx.lineWidth = 1.5;
     for (let x = 0; x < w; x += 60) {
       ctx.beginPath();
@@ -58,8 +58,8 @@ export class LoungeTV {
     }
 
     // Outer subtle glowing edge
-    ctx.strokeStyle = 'rgba(99, 102, 241, 0.3)';
-    ctx.lineWidth = 6;
+    ctx.strokeStyle = 'rgba(99, 102, 241, 0.4)';
+    ctx.lineWidth = 8;
     ctx.strokeRect(16, 16, w - 32, h - 32);
 
     // 1. Digital Clock (Image 2: "1:02 PM")
@@ -67,33 +67,33 @@ export class LoungeTV {
     const timeString = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 150px "Inter", "Segoe UI", sans-serif';
+    ctx.font = 'bold 155px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.shadowColor = 'rgba(129, 140, 248, 0.5)';
-    ctx.shadowBlur = 30;
-    ctx.fillText(timeString, w / 2, h / 2 - 90);
+    ctx.shadowColor = 'rgba(129, 140, 248, 0.7)';
+    ctx.shadowBlur = 35;
+    ctx.fillText(timeString, w / 2, h / 2 - 95);
 
     // 2. Subtitle prompt (Image 2)
     ctx.shadowBlur = 0;
     ctx.fillStyle = '#9ca3af';
-    ctx.font = '500 42px "Inter", "Segoe UI", sans-serif';
+    ctx.font = '500 44px "Inter", "Segoe UI", sans-serif';
     ctx.fillText('No one is sharing their screen.', w / 2, h / 2 + 35);
 
     ctx.fillStyle = '#6b7280';
     ctx.font = '400 30px "Inter", "Segoe UI", sans-serif';
-    ctx.fillText('Start sharing your screen or stream to watch together.', w / 2, h / 2 + 95);
+    ctx.fillText('Start sharing your screen or stream to watch together.', w / 2, h / 2 + 98);
 
     // 3. YouTube & Web Screen Share Action Buttons (Image 2)
     const drawPillButton = (x: number, y: number, label: string, isYoutube: boolean) => {
       ctx.save();
       const bw = 240;
       const bh = 68;
-      const r = 18;
+      const r = 20;
 
       ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+      ctx.lineWidth = 2.5;
       ctx.beginPath();
       ctx.roundRect(x - bw / 2, y - bh / 2, bw, bh, r);
       ctx.fill();
@@ -137,8 +137,8 @@ export class LoungeTV {
       ctx.restore();
     };
 
-    drawPillButton(w / 2 - 140, h / 2 + 200, 'YouTube', true);
-    drawPillButton(w / 2 + 140, h / 2 + 200, 'Screen Share', false);
+    drawPillButton(w / 2 - 145, h / 2 + 205, 'YouTube', true);
+    drawPillButton(w / 2 + 145, h / 2 + 205, 'Screen Share', false);
 
     if (this.canvasTexture) {
       this.canvasTexture.needsUpdate = true;
@@ -159,11 +159,12 @@ export class LoungeTV {
     this.renderIdleCanvas();
     if (this.tvMesh && this.canvasTexture) {
       const mat = this.tvMesh.material as THREE.MeshStandardMaterial;
+      mat.color.setHex(0xffffff);
       mat.map = this.canvasTexture;
-      mat.emissive = new THREE.Color(0xffffff);
+      mat.emissive.setHex(0xffffff);
       mat.emissiveMap = this.canvasTexture;
-      mat.emissiveIntensity = 0.95;
-      mat.roughness = 0.2;
+      mat.emissiveIntensity = 1.0;
+      mat.roughness = 0.15;
       mat.metalness = 0.05;
       mat.side = THREE.DoubleSide;
       mat.needsUpdate = true;
@@ -212,8 +213,9 @@ export class LoungeTV {
 
     if (this.tvMesh) {
       const mat = this.tvMesh.material as THREE.MeshStandardMaterial;
+      mat.color.setHex(0xffffff);
       mat.map = this.videoTexture;
-      mat.emissive = new THREE.Color(0xffffff);
+      mat.emissive.setHex(0xffffff);
       mat.emissiveMap = this.videoTexture;
       mat.emissiveIntensity = 1.0;
       mat.roughness = 0.1;

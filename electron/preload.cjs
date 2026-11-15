@@ -72,4 +72,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('coop:panic-triggered', handler);
     return () => ipcRenderer.removeListener('coop:panic-triggered', handler);
   },
+
+  // 3D Lounge Binary Model Loading (app.asar & disk support)
+  loadModelBuffer: (modelName) => ipcRenderer.invoke('lounge:load-model', modelName),
 });
