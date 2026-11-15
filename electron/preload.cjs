@@ -75,4 +75,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 3D Lounge Binary Model Loading (app.asar & disk support)
   loadModelBuffer: (modelName) => ipcRenderer.invoke('lounge:load-model', modelName),
+
+  // Auto Updater (Seamless background updates from GitHub)
+  onUpdateStatus: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('updater:status', handler);
+    return () => ipcRenderer.removeListener('updater:status', handler);
+  },
+  checkForUpdates: () => ipcRenderer.invoke('updater:check'),
+  restartAndInstallUpdate: () => ipcRenderer.send('updater:restart-and-install'),
 });

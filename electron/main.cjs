@@ -15,6 +15,14 @@ const fs = require('fs');
 const coopHost = require('./coopHost.cjs');
 const nativeHotkey = require('./nativeHotkey.cjs');
 
+let autoUpdater = null;
+try {
+  const updaterModule = require('electron-updater');
+  autoUpdater = updaterModule.autoUpdater;
+} catch (e) {
+  console.warn('[AutoUpdater] Failed to load electron-updater module:', e);
+}
+
 function startInputHook() {
   nativeHotkey.startPolling((data) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -428,6 +436,101 @@ ipcMain.handle('lounge:load-model', async (_event, modelName) => {
   }
 });
 
+// 5. GitHub Auto-Updater (Automated seamless updates from ramkarthick125/squadspace)
+function setupAutoUpdater() {
+  if (!autoUpdater) return;
+  if (!app.isPackaged) {
+    console.log('[AutoUpdater] Skipped in development mode');
+    return;
+  }
+
+  try {
+    autoUpdater.autoDownload = true;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on('checking-for-update', () => {
+      console.log('[AutoUpdater] Checking for updates...');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('updater:status', { status: 'checking' });
+      }
+    });
+
+    autoUpdater.on('update-available', (info) => {
+      console.log('[AutoUpdater] Update available:', info.version);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('updater:status', {
+          status: 'available',
+          version: info.version,
+        });
+      }
+    });
+
+    autoUpdater.on('update-not-available', (info) => {
+      console.log('[AutoUpdater] App is up to date:', info.version);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('updater:status', { status: 'up-to-date', version: info.version });
+      }
+    });
+
+    autoUpdater.on('download-progress', (progressObj) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('updater:status', {
+          status: 'downloading',
+          percent: Math.round(progressObj.percent),
+        });
+      }
+    });
+
+    autoUpdater.on('update-downloaded', (info) => {
+      console.log('[AutoUpdater] Update downloaded successfully:', info.version);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('updater:status', {
+          status: 'downloaded',
+          version: info.version,
+        });
+      }
+    });
+
+    autoUpdater.on('error', (err) => {
+      console.warn('[AutoUpdater] Auto-updater notice:', err?.message || String(err));
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('updater:status', { status: 'error', error: err?.message || String(err) });
+      }
+    });
+
+    // Check 4 seconds after launch, then every 30 minutes
+    setTimeout(() => {
+      autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+        console.warn('[AutoUpdater] Initial check notice:', err?.message || err);
+      });
+    }, 4000);
+
+    setInterval(() => {
+      autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+        console.warn('[AutoUpdater] Interval check notice:', err?.message || err);
+      });
+    }, 30 * 60 * 1000);
+  } catch (err) {
+    console.error('[AutoUpdater] Error initializing auto updater:', err);
+  }
+}
+
+ipcMain.handle('updater:check', async () => {
+  if (!autoUpdater || !app.isPackaged) return { status: 'dev-mode' };
+  try {
+    const res = await autoUpdater.checkForUpdates();
+    return { status: 'success', updateInfo: res?.updateInfo };
+  } catch (err) {
+    return { status: 'error', error: err?.message || String(err) };
+  }
+});
+
+ipcMain.on('updater:restart-and-install', () => {
+  if (autoUpdater) {
+    autoUpdater.quitAndInstall(false, true);
+  }
+});
+
 // Single Instance Lock
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -453,6 +556,7 @@ if (!gotTheLock) {
     createTray();
     registerGlobalShortcuts();
     startInputHook();
+    setupAutoUpdater();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createMainWindow();

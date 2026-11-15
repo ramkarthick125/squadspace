@@ -157,6 +157,19 @@ export interface ElectronAPI {
   coopInjectMouse?: (slot: number, data: any) => void;
   coopPanicDisconnectAll?: () => Promise<boolean>;
   onCoopPanic?: (callback: () => void) => () => void;
+
+  // Auto Updater
+  loadModelBuffer?: (modelName: string) => Promise<any>;
+  onUpdateStatus?: (
+    callback: (data: {
+      status: 'checking' | 'available' | 'up-to-date' | 'downloading' | 'downloaded' | 'error';
+      version?: string;
+      percent?: number;
+      error?: string;
+    }) => void
+  ) => () => void;
+  checkForUpdates?: () => Promise<any>;
+  restartAndInstallUpdate?: () => void;
 }
 
 declare global {

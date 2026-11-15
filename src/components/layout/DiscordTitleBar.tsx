@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Minus, Square, Copy, X, Sparkles } from 'lucide-react';
+import { Minus, Square, Copy, X, Sparkles, Loader2 } from 'lucide-react';
 import { useVoiceStore } from '../../store/useVoiceStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import { useServerStore } from '../../store/useServerStore';
@@ -7,6 +7,11 @@ import { useServerStore } from '../../store/useServerStore';
 export const DiscordTitleBar: React.FC = () => {
   const isElectron = Boolean(window.electronAPI?.isElectron);
   const [isMaximized, setIsMaximized] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<{
+    status: 'checking' | 'available' | 'up-to-date' | 'downloading' | 'downloaded' | 'error';
+    version?: string;
+    percent?: number;
+  } | null>(null);
 
   const { toggleMute, toggleDeafen } = useVoiceStore();
   const { currentUser } = useAuthStore();
@@ -30,10 +35,16 @@ export const DiscordTitleBar: React.FC = () => {
       toggleDeafen();
     });
 
+    // Subscribe to auto-updater notifications
+    const unsubUpdater = window.electronAPI.onUpdateStatus?.((data) => {
+      setUpdateStatus(data);
+    });
+
     return () => {
       if (unsubMax) unsubMax();
       if (unsubMute) unsubMute();
       if (unsubDeafen) unsubDeafen();
+      if (unsubUpdater) unsubUpdater();
     };
   }, [isElectron, toggleMute, toggleDeafen]);
 
@@ -56,6 +67,31 @@ export const DiscordTitleBar: React.FC = () => {
           — {!currentUser ? 'Log In' : activeView === 'dm' ? 'Direct Messages' : serverName || 'Hangout'}
         </span>
       </div>
+
+      {/* Auto-Update Notification Banner */}
+      {updateStatus && updateStatus.status === 'downloading' && (
+        <div
+          className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-900/60 border border-purple-500/30 text-purple-200 text-[10px] select-none"
+          style={{ WebkitAppRegion: 'no-drag' } as any}
+        >
+          <Loader2 className="w-2.5 h-2.5 animate-spin" />
+          <span>Downloading update {updateStatus.percent ? `(${updateStatus.percent}%)` : ''}...</span>
+        </div>
+      )}
+
+      {updateStatus && updateStatus.status === 'downloaded' && (
+        <div style={{ WebkitAppRegion: 'no-drag' } as any}>
+          <button
+            type="button"
+            onClick={() => window.electronAPI?.restartAndInstallUpdate?.()}
+            title="Click to restart and apply update now"
+            className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-[10px] shadow transition cursor-pointer"
+          >
+            <Sparkles className="w-3 h-3" />
+            <span>Update ready — Restart</span>
+          </button>
+        </div>
+      )}
 
       {/* Windows Controls (Minimize, Maximize, Close) */}
       <div

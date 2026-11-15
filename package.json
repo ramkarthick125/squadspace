@@ -1,7 +1,7 @@
 {
   "name": "squadspace",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
@@ -17,6 +17,11 @@
     "appId": "com.squadspace.desktop",
     "productName": "SquadSpace",
     "copyright": "Copyright © 2026 SquadSpace",
+    "publish": {
+      "provider": "github",
+      "owner": "ramkarthick125",
+      "repo": "squadspace"
+    },
     "directories": {
       "output": "release"
     },
@@ -75,6 +80,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.187.0",
+    "electron-updater": "^6.8.11",
     "livekit-client": "^2.23.0",
     "lucide-react": "^1.69.0",
     "react": "^19.3.1",
