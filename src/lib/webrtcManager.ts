@@ -38,21 +38,29 @@ type ParticipantLeftCallback = (userId: string) => void;
 type ParticipantUpdateCallback = (userId: string, updates: Partial<VoiceParticipant>) => void;
 
 /**
- * Injects WebRTC SDP low-latency attributes:
- * 1. a=playout-delay:0 0 (Chromium low-latency playout extension, eliminates receiver jitter delay)
- * 2. Optimized fmtp bitrate bounds (x-google-min-bitrate & x-google-max-bitrate)
+ * Injects WebRTC SDP low-latency attributes and eliminates GCC bitrate collapse:
+ * 1. Drops 'transport-wide-cc' header extensions and feedback so WebRTC does not aggressively throttle bitrates
+ * 2. Forces 'goog-remb' receiver-estimated maximum bitrate with high allocation bounds (b=AS & b=TIAS)
+ * 3. Enforces x-google-min-bitrate, x-google-start-bitrate, and x-google-max-bitrate floors
+ * 4. Injects a=playout-delay:0 0 for ultra-low latency rendering
  */
-function injectLowLatencySdp(sdp: string, maxBitrateBps: number = 12_000_000): string {
+function injectLowLatencySdp(sdp: string, maxBitrateBps: number = 16_000_000): string {
   if (!sdp) return sdp;
   const lines = sdp.split('\r\n');
   const result: string[] = [];
   let inVideo = false;
   const maxBitrateKbps = Math.round(maxBitrateBps / 1000);
-  const minBitrateKbps = Math.round(maxBitrateKbps * 0.6); // High floor prevents pixelation during fast motion
-  const startBitrateKbps = Math.round(maxBitrateKbps * 0.85); // Rapid ramp-up immediately to full clarity
+  const minBitrateKbps = Math.max(6000, Math.round(maxBitrateKbps * 0.65)); // High 65% floor prevents pixelation drops
+  const startBitrateKbps = Math.max(8000, Math.round(maxBitrateKbps * 0.85)); // Fast ramp-up to crystal clarity
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+
+    // 1. Drop Transport-Wide CC header extension to neutralize volatile congestion backoff
+    if (line.includes('urn:ietf:params:rtp-hdrext:transport-wide-cc')) {
+      continue;
+    }
+
     if (line.startsWith('m=video')) {
       inVideo = true;
       result.push(line);
@@ -69,6 +77,11 @@ function injectLowLatencySdp(sdp: string, maxBitrateBps: number = 12_000_000): s
       continue;
     }
 
+    // 2. Drop transport-cc RTCP feedback so WebRTC uses REMB (goog-remb) instead
+    if (inVideo && line.startsWith('a=rtcp-fb:') && line.includes('transport-cc')) {
+      continue;
+    }
+
     result.push(line);
 
     // Inject playout-delay right after rtcp-mux or c=IN in video section
@@ -78,7 +91,7 @@ function injectLowLatencySdp(sdp: string, maxBitrateBps: number = 12_000_000): s
       }
     }
 
-    // Enhance fmtp lines with google bitrate constraints
+    // Enhance fmtp lines with google bitrate constraints and VP9/AV1 screen clarity
     if (inVideo && line.startsWith('a=fmtp:')) {
       if (!line.includes('x-google-max-bitrate')) {
         result[result.length - 1] = `${line};x-google-min-bitrate=${minBitrateKbps};x-google-max-bitrate=${maxBitrateKbps};x-google-start-bitrate=${startBitrateKbps}`;
@@ -340,7 +353,56 @@ class WebRTCManager {
   }
 
   /**
-   * Applies hardware-grade high bitrate (12-25 Mbps) and 60 FPS encoding parameters
+   * Prioritizes high-efficiency modern codecs (AV1 and VP9) over legacy codecs
+   * AV1 and VP9 deliver >50% better compression efficiency than H.264 at the exact same bitrate
+   * and include native Screen-Content Coding (SCC) to prevent macroblock pixelation.
+   */
+  public applyVideoCodecPreferences(transceiver: RTCRtpTransceiver) {
+    if (!transceiver || !('setCodecPreferences' in transceiver)) return;
+    try {
+      const senderCaps = 'getCapabilities' in RTCRtpSender ? RTCRtpSender.getCapabilities('video') : null;
+      const receiverCaps = 'getCapabilities' in RTCRtpReceiver ? RTCRtpReceiver.getCapabilities('video') : null;
+      const allCodecs = senderCaps?.codecs || receiverCaps?.codecs;
+      if (!allCodecs || allCodecs.length === 0) return;
+
+      // Desired codec order: AV1 -> VP9 -> H.264 (Baseline) -> VP8
+      const preferredMimes = ['video/av1', 'video/vp9', 'video/h264', 'video/vp8'];
+      const sorted = [...allCodecs].sort((a, b) => {
+        const mimeA = a.mimeType.toLowerCase();
+        const mimeB = b.mimeType.toLowerCase();
+        let idxA = preferredMimes.indexOf(mimeA);
+        let idxB = preferredMimes.indexOf(mimeB);
+        if (idxA === -1) idxA = 999;
+        if (idxB === -1) idxB = 999;
+
+        if (idxA !== idxB) {
+          return idxA - idxB;
+        }
+
+        // Inside VP9, prefer Profile 0 (universal support and screen content tools)
+        if (mimeA === 'video/vp9' && a.sdpFmtpLine && b.sdpFmtpLine) {
+          if (a.sdpFmtpLine.includes('profile-id=0') && !b.sdpFmtpLine.includes('profile-id=0')) return -1;
+          if (!a.sdpFmtpLine.includes('profile-id=0') && b.sdpFmtpLine.includes('profile-id=0')) return 1;
+        }
+
+        // Inside H.264, prefer standard baseline (42e01f) which works reliably in WebRTC
+        if (mimeA === 'video/h264' && a.sdpFmtpLine && b.sdpFmtpLine) {
+          if (a.sdpFmtpLine.includes('42e01f') && !b.sdpFmtpLine.includes('42e01f')) return -1;
+          if (!a.sdpFmtpLine.includes('42e01f') && b.sdpFmtpLine.includes('42e01f')) return 1;
+        }
+
+        return 0;
+      });
+
+      transceiver.setCodecPreferences(sorted);
+      console.log('[WebRTC] Successfully prioritized crystal-clear codecs: AV1 > VP9 > H264 > VP8');
+    } catch (err) {
+      console.warn('[WebRTC] setCodecPreferences notice:', err);
+    }
+  }
+
+  /**
+   * Applies hardware-grade high bitrate (14-30 Mbps) and 60 FPS encoding parameters
    * Enforces maintain-resolution so WebRTC never downscales or pixelates.
    */
   public applySenderParameters(peerId: string) {
@@ -364,7 +426,7 @@ class WebRTCManager {
           params.encodings = [{}];
         }
         params.encodings[0].maxBitrate = this.currentScreenBitrate;
-        (params.encodings[0] as any).minBitrate = Math.round(this.currentScreenBitrate * 0.6);
+        (params.encodings[0] as any).minBitrate = Math.round(this.currentScreenBitrate * 0.65);
         params.encodings[0].maxFramerate = 60;
         params.encodings[0].scaleResolutionDownBy = 1.0;
         params.encodings[0].priority = 'high';
@@ -544,10 +606,10 @@ class WebRTCManager {
 
       const videoTrack = this.localScreenStream.getVideoTracks()[0];
       if (videoTrack) {
-        // Enforce content hint so browser encoder prioritizes motion for 60fps
+        // Enforce content hint: 'detail' engages Chromium's Screen-Content Coding (SCC)
+        // This preserves razor-sharp edges and fine UI text instead of blurry webcam smoothing
         if ('contentHint' in videoTrack) {
-          (videoTrack as any).contentHint =
-            preset.contentHint || (preset.frameRate >= 60 ? 'motion' : 'detail');
+          (videoTrack as any).contentHint = preset.contentHint || 'detail';
         }
 
         const audioTracks = this.localScreenStream.getAudioTracks();
@@ -559,50 +621,11 @@ class WebRTCManager {
           const vSender = pc.addTrack(videoTrack, this.localScreenStream!);
           addedSenders.push(vSender);
 
-          // 1. Force hardware GPU H.264 High Profile / VP9 codec preferences on the new video transceiver
-          try {
-            const transceivers = pc.getTransceivers();
-            const videoTransceiver = transceivers.find((t) => t.sender === vSender);
-            if (videoTransceiver && 'setCodecPreferences' in videoTransceiver && 'getCapabilities' in RTCRtpSender) {
-              const capabilities = RTCRtpSender.getCapabilities('video');
-              if (capabilities && capabilities.codecs) {
-                // Prioritize H.264 High Profile (NVENC / QuickSync / AMF GPU hardware acceleration)
-                const h264High = capabilities.codecs.filter((c) =>
-                  c.mimeType.toLowerCase() === 'video/h264' &&
-                  c.sdpFmtpLine?.includes('profile-level-id=6400')
-                );
-                const h264Other = capabilities.codecs.filter((c) =>
-                  c.mimeType.toLowerCase() === 'video/h264' &&
-                  !c.sdpFmtpLine?.includes('profile-level-id=6400')
-                );
-                const vp9 = capabilities.codecs.filter((c) => c.mimeType.toLowerCase() === 'video/vp9');
-                const rest = capabilities.codecs.filter((c) =>
-                  c.mimeType.toLowerCase() !== 'video/h264' && c.mimeType.toLowerCase() !== 'video/vp9'
-                );
-                videoTransceiver.setCodecPreferences([...h264High, ...h264Other, ...vp9, ...rest]);
-              }
-            }
-          } catch (codecErr) {
-            console.warn('Could not set transceiver codec preferences:', codecErr);
-          }
-
-          // 2. Configure RTCRtpEncodingParameters with high bitrate and maintain-resolution
-          if (vSender && vSender.getParameters) {
-            try {
-              const params = vSender.getParameters();
-              if (!params.encodings || params.encodings.length === 0) {
-                params.encodings = [{}];
-              }
-              params.encodings[0].maxBitrate = preset.maxBitrate;
-              (params.encodings[0] as any).minBitrate = Math.round(preset.maxBitrate * 0.45);
-              params.encodings[0].maxFramerate = preset.frameRate;
-              params.encodings[0].scaleResolutionDownBy = 1.0;
-              params.encodings[0].priority = 'high';
-              params.encodings[0].networkPriority = 'high';
-              // CRITICAL: maintain-resolution guarantees the encoder NEVER drops resolution (prevents 1080p -> 360p downscaling)
-              (params as any).degradationPreference = 'maintain-resolution';
-              vSender.setParameters(params).catch(() => {});
-            } catch {}
+          // 1. Force modern high-efficiency codecs (AV1 -> VP9 Profile 0/2 -> H264 -> VP8)
+          const transceivers = pc.getTransceivers();
+          const videoTransceiver = transceivers.find((t) => t.sender === vSender);
+          if (videoTransceiver) {
+            this.applyVideoCodecPreferences(videoTransceiver);
           }
 
           if (audioTracks.length > 0) {
@@ -612,8 +635,9 @@ class WebRTCManager {
 
           this.screenSenders.set(peerId, addedSenders);
           this.createAndSendOffer(peerId, preset.maxBitrate);
-          setTimeout(() => this.applySenderParameters(peerId), 500);
-          setTimeout(() => this.applySenderParameters(peerId), 1500);
+          setTimeout(() => this.applySenderParameters(peerId), 300);
+          setTimeout(() => this.applySenderParameters(peerId), 1000);
+          setTimeout(() => this.applySenderParameters(peerId), 2500);
         });
 
         this.sendSignal({
@@ -849,9 +873,20 @@ class WebRTCManager {
     if (this.localScreenStream) {
       const senders: RTCRtpSender[] = [];
       this.localScreenStream.getTracks().forEach((track) => {
-        senders.push(pc.addTrack(track, this.localScreenStream!));
+        const sender = pc.addTrack(track, this.localScreenStream!);
+        senders.push(sender);
+
+        if (track.kind === 'video') {
+          const transceivers = pc.getTransceivers();
+          const videoTransceiver = transceivers.find((t) => t.sender === sender);
+          if (videoTransceiver) {
+            this.applyVideoCodecPreferences(videoTransceiver);
+          }
+        }
       });
       this.screenSenders.set(peerId, senders);
+      setTimeout(() => this.applySenderParameters(peerId), 400);
+      setTimeout(() => this.applySenderParameters(peerId), 1500);
     }
 
     pc.onicecandidate = (event) => {
@@ -873,10 +908,15 @@ class WebRTCManager {
     };
 
     pc.ontrack = (event) => {
-      // Eliminate receiver jitter buffer delay for ultra-low latency streaming
-      if (event.receiver && 'jitterBufferTarget' in event.receiver) {
+      // Eliminate receiver jitter buffer and playout queue delay for ultra-low latency streaming
+      if (event.receiver) {
         try {
-          (event.receiver as any).jitterBufferTarget = 0;
+          if ('jitterBufferTarget' in event.receiver) {
+            (event.receiver as any).jitterBufferTarget = 0;
+          }
+          if ('playoutDelayHint' in event.receiver) {
+            (event.receiver as any).playoutDelayHint = 0;
+          }
         } catch {}
       }
 

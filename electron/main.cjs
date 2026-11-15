@@ -38,18 +38,20 @@ function stopInputHook() {
 // Live Hosted Deployment URL (Discord-style remote auto-updating shell)
 const REMOTE_APP_URL = process.env.SQUADSPACE_REMOTE_URL || 'https://squadspace-flame.vercel.app';
 
-// 1. Hardware Acceleration & Unthrottled Streaming GPU Flags
+// 1. Hardware Acceleration & Unthrottled 60 FPS GPU Video Pipeline
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-zero-copy');
-app.commandLine.appendSwitch('force-video-over-gpu');
+app.commandLine.appendSwitch('enable-native-gpu-memory-buffers');
+app.commandLine.appendSwitch('force-high-performance-gpu');
 app.commandLine.appendSwitch('enable-webrtc-hw-encoding');
 app.commandLine.appendSwitch('enable-webrtc-hw-decoding');
+app.commandLine.appendSwitch('webrtc-max-cpu-consumption-percentage', '100');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,HardwareMediaKeyHandling');
-app.commandLine.appendSwitch('enable-features', 'WebRtcHideLocalIpsWithMdns,RunAllCompositorStagesBeforeDraw,AcceleratedVideoDecode,AcceleratedVideoEncode,VaapiVideoDecoder,VaapiVideoEncoder');
+app.commandLine.appendSwitch('enable-features', 'WebRtcHideLocalIpsWithMdns,RunAllCompositorStagesBeforeDraw,AcceleratedVideoDecode,AcceleratedVideoEncode,D3D11VideoDecoder');
 
 // Register custom protocol for deep linking: squadspace://invite/sqd-xxx
 if (process.defaultApp) {
