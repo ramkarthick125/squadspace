@@ -14,6 +14,7 @@ import {
   Sliders,
   Tv,
   Gamepad2,
+  Armchair,
 } from 'lucide-react';
 import { Channel, UserProfile } from '../../types';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -25,6 +26,7 @@ import { ScreenShareModal } from '../modals/ScreenShareModal';
 import { CoopHostPanel } from './CoopHostPanel';
 import { CoopJoinModal } from './CoopJoinModal';
 import { ChatArea } from '../chat/ChatArea';
+import { Lounge3DView } from './lounge/Lounge3DView';
 
 interface VoiceRoomProps {
   channel: Channel;
@@ -64,6 +66,7 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
   const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
   const [isTheater, setIsTheater] = useState(false);
+  const [is3DMode, setIs3DMode] = useState(false);
 
   const {
     isCoopHost,
@@ -196,6 +199,20 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
               <MessageSquare className="w-4 h-4" />
               <span>Voice Chat</span>
             </button>
+
+            {/* 3D Gamer Lounge Room Button */}
+            <button
+              onClick={() => setIs3DMode(!is3DMode)}
+              title={is3DMode ? 'Exit 3D View (Back to 2D Tiles)' : 'Enter 3D Gamer Lounge (Watch on TV & Sit with friends)'}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition shadow cursor-pointer border ${
+                is3DMode
+                  ? 'bg-purple-600 border-purple-400 text-white shadow-purple-500/30'
+                  : 'bg-[#2b2d31] hover:bg-[#382b4a] border-purple-500/40 text-purple-300 hover:text-white'
+              }`}
+            >
+              <Armchair className="w-4 h-4 text-purple-300" />
+              <span>{is3DMode ? '2D View' : '3D Lounge'}</span>
+            </button>
           </div>
         </div>
 
@@ -216,8 +233,31 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
         )}
 
         {/* Participants Stage */}
-        <div className="flex-1 p-4 md:p-6 overflow-hidden flex flex-col items-center justify-center min-h-0">
-          {participants.length === 0 ? (
+        <div className={`flex-1 overflow-hidden flex flex-col items-center justify-center min-h-0 ${is3DMode ? 'p-0 w-full h-full' : 'p-4 md:p-6'}`}>
+          {is3DMode ? (
+            <div className="w-full h-full min-h-0 relative flex-1">
+              <Lounge3DView
+                channel={channel}
+                currentUser={currentUser}
+                screenShareStream={screenShareStream}
+                screenSharingParticipant={screenSharingParticipant}
+                participants={participants}
+                isMuted={isMuted}
+                isDeafened={isDeafened}
+                isScreenSharing={isScreenSharing}
+                onToggleMute={toggleMute}
+                onToggleDeafen={toggleDeafen}
+                onToggleScreenShare={() => {
+                  if (isScreenSharing) {
+                    if (currentUser) toggleScreenShare(currentUser);
+                  } else {
+                    setIsScreenShareModalOpen(true);
+                  }
+                }}
+                onExit={() => setIs3DMode(false)}
+              />
+            </div>
+          ) : participants.length === 0 ? (
             <div className="text-center space-y-4 max-w-sm">
               <div className="w-20 h-20 mx-auto rounded-full bg-discord-sidebar flex items-center justify-center">
                 <Users className="w-10 h-10 text-discord-gray-400" />
@@ -353,10 +393,11 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
           )}
         </div>
 
-        {/* Bottom Voice Controls Bar */}
-        <div className="h-20 bg-discord-darkest/95 border-t border-discord-darkest/60 px-6 flex items-center justify-center gap-4 flex-shrink-0">
-          {isConnected && currentUser ? (
-            <>
+        {/* Bottom Voice Controls Bar (Hidden in 3D Lounge for full immersion) */}
+        {!is3DMode && (
+          <div className="h-20 bg-discord-darkest/95 border-t border-discord-darkest/60 px-6 flex items-center justify-center gap-4 flex-shrink-0">
+            {isConnected && currentUser ? (
+              <>
               {/* Live Mic Level Visualizer */}
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-discord-sidebar/80 rounded-full border border-discord-darkest text-xs mr-2">
                 <span className="text-[11px] font-semibold text-discord-gray-300">Input</span>
@@ -468,6 +509,16 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
                     </span>
                   )}
                 </button>
+
+                {/* 3D Gamer Lounge Quick Button */}
+                <button
+                  onClick={() => setIs3DMode(true)}
+                  title="Enter 3D Gamer Lounge (Watch on Big TV & Sit with friends)"
+                  className="px-4 h-12 rounded-full flex items-center gap-2 font-bold text-xs transition-all cursor-pointer shadow-lg border border-purple-500/40 bg-[#25173e] hover:bg-purple-600 text-purple-200 hover:text-white ml-1"
+                >
+                  <Armchair className="w-5 h-5 text-purple-300" />
+                  <span>3D Lounge</span>
+                </button>
               </div>
 
               {/* Disconnect Voice */}
@@ -488,7 +539,8 @@ export const VoiceRoom: React.FC<VoiceRoomProps> = ({
             </button>
           )}
         </div>
-      </div>
+      )}
+    </div>
 
       {/* Voice Channel Chat Side Panel (Separate text chat inside voice channels like Discord!) */}
       {showVoiceChat && (
