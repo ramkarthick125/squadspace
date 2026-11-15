@@ -39,7 +39,7 @@ export const SCREEN_SHARE_PRESETS: Record<ScreenSharePreset, ScreenPresetConfig>
     maxBitrate: 16_000_000,
     description: 'Crisp 1080p at ultra smooth 60 FPS. High bitrate for fast-paced gaming.',
     tag: '1080p 60FPS',
-    contentHint: 'detail',
+    contentHint: 'motion',
   },
   '1080p-30': {
     name: 'Full HD (1080p @ 30fps)',
@@ -57,7 +57,7 @@ export const SCREEN_SHARE_PRESETS: Record<ScreenSharePreset, ScreenPresetConfig>
     maxBitrate: 22_000_000,
     description: 'Supreme 2K QHD 60 FPS clarity for high-end monitors and esports.',
     tag: '2K 60FPS',
-    contentHint: 'detail',
+    contentHint: 'motion',
   },
   '1440p-30': {
     name: 'Ultra 2K (1440p @ 30fps)',
@@ -75,7 +75,7 @@ export const SCREEN_SHARE_PRESETS: Record<ScreenSharePreset, ScreenPresetConfig>
     maxBitrate: 30_000_000,
     description: 'Uncapped original native display stream with maximum bitrate.',
     tag: 'Source 60FPS',
-    contentHint: 'detail',
+    contentHint: 'motion',
   },
   '720p-60': {
     name: 'Standard HD (720p @ 60fps)',
@@ -84,7 +84,7 @@ export const SCREEN_SHARE_PRESETS: Record<ScreenSharePreset, ScreenPresetConfig>
     maxBitrate: 8_000_000,
     description: 'Smooth 60 FPS stream optimized for lower bandwidth.',
     tag: '720p 60FPS',
-    contentHint: 'detail',
+    contentHint: 'motion',
   },
   '720p-30': {
     name: 'Standard HD (720p @ 30fps)',
@@ -104,7 +104,7 @@ export const SCREEN_SHARE_PRESETS: Record<ScreenSharePreset, ScreenPresetConfig>
     maxBitrate: 22_000_000,
     description: 'Supreme 2K QHD 60 FPS clarity.',
     tag: '2K 60FPS',
-    contentHint: 'detail',
+    contentHint: 'motion',
   },
   '2k-crisp': {
     name: 'Ultra 2K (1440p @ 30fps)',
@@ -122,7 +122,7 @@ export const SCREEN_SHARE_PRESETS: Record<ScreenSharePreset, ScreenPresetConfig>
     maxBitrate: 16_000_000,
     description: 'Crisp 1080p 60fps.',
     tag: '1080p',
-    contentHint: 'detail',
+    contentHint: 'motion',
   },
   balanced: {
     name: 'Full HD (1080p @ 60fps)',
@@ -131,7 +131,7 @@ export const SCREEN_SHARE_PRESETS: Record<ScreenSharePreset, ScreenPresetConfig>
     maxBitrate: 14_000_000,
     description: 'Full HD high quality.',
     tag: 'Recommended',
-    contentHint: 'detail',
+    contentHint: 'motion',
   },
   'bandwidth-saver': {
     name: 'Standard HD (720p @ 30fps)',

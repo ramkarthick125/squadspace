@@ -189,7 +189,7 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
       tabIndex={0}
       className="relative w-full h-full bg-[#0e1013] rounded-2xl overflow-hidden group select-none flex items-center justify-center border border-[#1e1f22] shadow-2xl focus:outline-none focus:ring-1 focus:ring-discord-blurple/50"
     >
-      {/* Video Element without native controls */}
+      {/* Video Element promoted to hardware compositor surface for fluid 60 FPS rendering */}
       <video
         ref={videoRef}
         autoPlay
@@ -198,6 +198,7 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
         controls={false}
         disablePictureInPicture={false}
         onContextMenu={(e) => e.preventDefault()}
+        style={{ transform: 'translateZ(0)', willChange: 'transform' }}
         className="w-full h-full object-contain pointer-events-none select-none bg-black"
       />
 

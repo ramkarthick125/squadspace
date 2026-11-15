@@ -431,7 +431,8 @@ class WebRTCManager {
         params.encodings[0].scaleResolutionDownBy = 1.0;
         params.encodings[0].priority = 'high';
         params.encodings[0].networkPriority = 'high';
-        (params as any).degradationPreference = 'maintain-resolution';
+        // maintain-framerate strictly prioritizes true 60 FPS delivery without stuttering or dropping frames
+        (params as any).degradationPreference = 'maintain-framerate';
         videoSender
           .setParameters(params)
           .then(() => {
@@ -487,12 +488,10 @@ class WebRTCManager {
                 mandatory: {
                   chromeMediaSource: 'desktop',
                   chromeMediaSourceId: options.sourceId,
-                  minFrameRate: preset.frameRate,
                   maxFrameRate: preset.frameRate,
-                  minWidth: preset.resolution.width,
-                  maxWidth: preset.resolution.width,
-                  minHeight: preset.resolution.height,
-                  maxHeight: preset.resolution.height,
+                  minFrameRate: Math.min(30, preset.frameRate),
+                  maxWidth: Math.max(1920, preset.resolution.width),
+                  maxHeight: Math.max(1080, preset.resolution.height),
                 },
               },
             } as any);
@@ -510,12 +509,10 @@ class WebRTCManager {
                 mandatory: {
                   chromeMediaSource: 'desktop',
                   chromeMediaSourceId: options.sourceId,
-                  minFrameRate: preset.frameRate,
                   maxFrameRate: preset.frameRate,
-                  minWidth: preset.resolution.width,
-                  maxWidth: preset.resolution.width,
-                  minHeight: preset.resolution.height,
-                  maxHeight: preset.resolution.height,
+                  minFrameRate: Math.min(30, preset.frameRate),
+                  maxWidth: Math.max(1920, preset.resolution.width),
+                  maxHeight: Math.max(1080, preset.resolution.height),
                 },
               },
             } as any);
@@ -606,10 +603,9 @@ class WebRTCManager {
 
       const videoTrack = this.localScreenStream.getVideoTracks()[0];
       if (videoTrack) {
-        // Enforce content hint: 'detail' engages Chromium's Screen-Content Coding (SCC)
-        // This preserves razor-sharp edges and fine UI text instead of blurry webcam smoothing
+        // Enforce content hint: 'motion' prioritizes 60 FPS fluid rendering cadence
         if ('contentHint' in videoTrack) {
-          (videoTrack as any).contentHint = preset.contentHint || 'detail';
+          (videoTrack as any).contentHint = preset.contentHint || 'motion';
         }
 
         const audioTracks = this.localScreenStream.getAudioTracks();
@@ -908,14 +904,14 @@ class WebRTCManager {
     };
 
     pc.ontrack = (event) => {
-      // Eliminate receiver jitter buffer and playout queue delay for ultra-low latency streaming
+      // 25ms buffer cushion (~1.5 frames) absorbs network packet spacing jitter and guarantees smooth 60fps frame pacing without lag
       if (event.receiver) {
         try {
           if ('jitterBufferTarget' in event.receiver) {
-            (event.receiver as any).jitterBufferTarget = 0;
+            (event.receiver as any).jitterBufferTarget = 25;
           }
           if ('playoutDelayHint' in event.receiver) {
-            (event.receiver as any).playoutDelayHint = 0;
+            (event.receiver as any).playoutDelayHint = 0.025;
           }
         } catch {}
       }

@@ -47,10 +47,12 @@ app.commandLine.appendSwitch('force-high-performance-gpu');
 app.commandLine.appendSwitch('enable-webrtc-hw-encoding');
 app.commandLine.appendSwitch('enable-webrtc-hw-decoding');
 app.commandLine.appendSwitch('webrtc-max-cpu-consumption-percentage', '100');
+app.commandLine.appendSwitch('disable-frame-rate-limit');
+app.commandLine.appendSwitch('disable-gpu-vsync');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
-app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,HardwareMediaKeyHandling');
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,HardwareMediaKeyHandling,WebRtcAllowWgcScreenCapturer');
 app.commandLine.appendSwitch('enable-features', 'WebRtcHideLocalIpsWithMdns,RunAllCompositorStagesBeforeDraw,AcceleratedVideoDecode,AcceleratedVideoEncode,D3D11VideoDecoder');
 
 // Register custom protocol for deep linking: squadspace://invite/sqd-xxx
