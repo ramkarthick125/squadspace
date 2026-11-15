@@ -33,6 +33,7 @@ let keybd_event = null;
 let mouse_event = null;
 let SetCursorPos = null;
 let GetSystemMetrics = null;
+let MapVirtualKey = null;
 let user32Available = false;
 
 try {
@@ -40,8 +41,9 @@ try {
   user32 = koffi.load('user32.dll');
   keybd_event = user32.func('void __stdcall keybd_event(uint8 bVk, uint8 bScan, uint32 dwFlags, uintptr dwExtraInfo)');
   mouse_event = user32.func('void __stdcall mouse_event(uint32 dwFlags, uint32 dx, uint32 dy, uint32 dwData, uintptr dwExtraInfo)');
-  SetCursorPos = user32.func('bool __stdcall SetCursorPos(int x, int y)');
+  SetCursorPos = user32.func('int __stdcall SetCursorPos(int x, int y)');
   GetSystemMetrics = user32.func('int __stdcall GetSystemMetrics(int nIndex)');
+  MapVirtualKey = user32.func('uint32 __stdcall MapVirtualKeyA(uint32 uCode, uint32 uMapType)');
   user32Available = true;
 } catch (err) {
   console.warn('user32 hooks failed to initialize:', err);
@@ -212,16 +214,17 @@ class CoopHostEngine {
   }
 
   connectSlot(slot, inputMode) {
-    this.slotDisconnect(slot);
+    const numSlot = Number(slot);
+    this.slotDisconnect(numSlot);
 
-    slotStates.set(slot, {
+    slotStates.set(numSlot, {
       inputMode,
       isPaused: false,
     });
 
     if (inputMode === 'gamepad') {
       if (!vigemAvailable || !client) {
-        console.warn(`ViGEm driver not available to connect virtual controller for slot ${slot}`);
+        console.warn(`ViGEm driver not available to connect virtual controller for slot ${numSlot}`);
         return { success: false, error: 'ViGEm driver not installed on host' };
       }
 
@@ -229,14 +232,14 @@ class CoopHostEngine {
         const controller = client.createX360Controller();
         const err = controller.connect();
         if (err) {
-          console.error(`Failed to connect Xbox 360 controller for slot ${slot}:`, err);
+          console.error(`Failed to connect Xbox 360 controller for slot ${numSlot}:`, err);
           return { success: false, error: String(err) };
         }
-        activeControllers.set(slot, controller);
-        console.log(`[Co-op] Virtual Xbox 360 Controller connected for Slot ${slot}!`);
+        activeControllers.set(numSlot, controller);
+        console.log(`[Co-op] Virtual Xbox 360 Controller connected for Slot ${numSlot}!`);
         return { success: true };
       } catch (err) {
-        console.error(`Exception creating controller for slot ${slot}:`, err);
+        console.error(`Exception creating controller for slot ${numSlot}:`, err);
         return { success: false, error: err.message };
       }
     }
@@ -246,38 +249,42 @@ class CoopHostEngine {
   }
 
   slotDisconnect(slot) {
-    if (activeControllers.has(slot)) {
+    const numSlot = Number(slot);
+    if (activeControllers.has(numSlot)) {
       try {
-        const controller = activeControllers.get(slot);
+        const controller = activeControllers.get(numSlot);
         controller.disconnect();
-        console.log(`[Co-op] Virtual Xbox 360 Controller disconnected for Slot ${slot}`);
+        console.log(`[Co-op] Virtual Xbox 360 Controller disconnected for Slot ${numSlot}`);
       } catch (err) {
-        console.error(`Error disconnecting controller for slot ${slot}:`, err);
+        console.error(`Error disconnecting controller for slot ${numSlot}:`, err);
       }
-      activeControllers.delete(slot);
+      activeControllers.delete(numSlot);
     }
-    slotStates.delete(slot);
+    slotStates.delete(numSlot);
   }
 
   setSlotPause(slot, isPaused) {
-    if (slotStates.has(slot)) {
-      const state = slotStates.get(slot);
+    const numSlot = Number(slot);
+    if (slotStates.has(numSlot)) {
+      const state = slotStates.get(numSlot);
       state.isPaused = isPaused;
-      slotStates.set(slot, state);
+      slotStates.set(numSlot, state);
     }
   }
 
   setSlotMode(slot, inputMode) {
-    if (slotStates.has(slot)) {
-      this.connectSlot(slot, inputMode);
+    const numSlot = Number(slot);
+    if (slotStates.has(numSlot)) {
+      this.connectSlot(numSlot, inputMode);
     }
   }
 
   injectGamepad(slot, data) {
-    const state = slotStates.get(slot);
+    const numSlot = Number(slot);
+    const state = slotStates.get(numSlot);
     if (!state || state.isPaused || state.inputMode !== 'gamepad') return;
 
-    const controller = activeControllers.get(slot);
+    const controller = activeControllers.get(numSlot);
     if (!controller) return;
 
     try {
@@ -308,11 +315,19 @@ class CoopHostEngine {
         if (controller.button.RIGHT_THUMB) controller.button.RIGHT_THUMB.setValue(!!b.rightThumb);
         if (controller.button.START) controller.button.START.setValue(!!b.start);
         if (controller.button.BACK) controller.button.BACK.setValue(!!b.back);
-        if (controller.button.DPAD_UP) controller.button.DPAD_UP.setValue(!!b.dpadUp);
-        if (controller.button.DPAD_DOWN) controller.button.DPAD_DOWN.setValue(!!b.dpadDown);
-        if (controller.button.DPAD_LEFT) controller.button.DPAD_LEFT.setValue(!!b.dpadLeft);
-        if (controller.button.DPAD_RIGHT) controller.button.DPAD_RIGHT.setValue(!!b.dpadRight);
         if (controller.button.GUIDE && typeof b.guide === 'boolean') controller.button.GUIDE.setValue(b.guide);
+
+        // D-Pad is controlled via dpadHorz and dpadVert axes in ViGEmClient
+        let dpadH = 0;
+        if (b.dpadLeft) dpadH = -1;
+        else if (b.dpadRight) dpadH = 1;
+
+        let dpadV = 0;
+        if (b.dpadUp) dpadV = 1;
+        else if (b.dpadDown) dpadV = -1;
+
+        if (controller.axis.dpadHorz) controller.axis.dpadHorz.setValue(dpadH);
+        if (controller.axis.dpadVert) controller.axis.dpadVert.setValue(dpadV);
       }
     } catch (err) {
       // Ignore transient frame errors
@@ -320,7 +335,8 @@ class CoopHostEngine {
   }
 
   injectKeyboard(slot, data) {
-    const state = slotStates.get(slot);
+    const numSlot = Number(slot);
+    const state = slotStates.get(numSlot);
     if (!state || state.isPaused || state.inputMode !== 'keyboard_mouse') return;
     if (!keybd_event) return;
 
@@ -331,17 +347,28 @@ class CoopHostEngine {
     if (!vk) return;
 
     const isKeyUp = data.event === 'keyup';
-    const flags = isKeyUp ? KEYEVENTF_KEYUP : 0;
+    let flags = isKeyUp ? KEYEVENTF_KEYUP : 0;
+
+    // Extended keys require KEYEVENTF_EXTENDEDKEY (arrows, navigation, numpad enter, etc.)
+    const extendedKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown', 'Insert', 'Delete', 'PrintScreen'];
+    if (extendedKeys.includes(data.code)) {
+      flags |= KEYEVENTF_EXTENDEDKEY;
+    }
 
     try {
-      keybd_event(vk, 0, flags, 0);
+      let scan = 0;
+      if (MapVirtualKey) {
+        scan = MapVirtualKey(vk, 0);
+      }
+      keybd_event(vk, scan, flags, 0);
     } catch (err) {
       console.warn('Keyboard injection error:', err);
     }
   }
 
   injectMouse(slot, data) {
-    const state = slotStates.get(slot);
+    const numSlot = Number(slot);
+    const state = slotStates.get(numSlot);
     if (!state || state.isPaused || state.inputMode !== 'keyboard_mouse') return;
     if (!mouse_event) return;
 
@@ -353,13 +380,12 @@ class CoopHostEngine {
           const targetY = Math.round(data.normY * this.screenHeight);
           if (SetCursorPos) {
             SetCursorPos(targetX, targetY);
-          } else {
-            const absX = Math.round((data.normX * 65535));
-            const absY = Math.round((data.normY * 65535));
-            mouse_event(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE, absX, absY, 0, 0);
           }
+          const absX = Math.round(data.normX * 65535);
+          const absY = Math.round(data.normY * 65535);
+          mouse_event(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE, absX, absY, 0, 0);
         } else if (typeof data.deltaX === 'number' && typeof data.deltaY === 'number') {
-          // Relative movement
+          // Relative movement (gaming FPS mouse look)
           mouse_event(MOUSEEVENTF_MOVE, data.deltaX, data.deltaY, 0, 0);
         }
       } else if (data.event === 'down' || data.event === 'up') {

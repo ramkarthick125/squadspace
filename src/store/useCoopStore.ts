@@ -82,8 +82,10 @@ export const useCoopStore = create<CoopState>((set, get) => ({
       // 1. High-frequency gaming input packets (Host only)
       if (state.isCoopHost && packet.type && packet.type.startsWith('input:')) {
         const inputPacket = packet as CoopInputPacket;
-        const targetSlot = inputPacket.slot;
-        const activePlayer = state.players.find((p) => p.slot === targetSlot && p.userId === senderPeerId);
+        const targetSlot = Number(inputPacket.slot);
+        const activePlayer = state.players.find(
+          (p) => Number(p.slot) === targetSlot && (p.userId === senderPeerId || p.user?.id === senderPeerId)
+        );
 
         if (activePlayer && !activePlayer.isPaused && window.electronAPI) {
           if (inputPacket.type === 'input:gamepad') {
@@ -121,14 +123,15 @@ export const useCoopStore = create<CoopState>((set, get) => ({
 
         case 'coop:response_join': {
           if (controlMsg.accepted && controlMsg.slot && controlMsg.inputMode) {
+            const hostId = controlMsg.hostUserId || state.hostUserId || senderPeerId;
+            const slotNum = Number(controlMsg.slot) as CoopSlot;
             set({
-              mySlot: controlMsg.slot,
+              hostUserId: hostId,
+              mySlot: slotNum,
               myInputMode: controlMsg.inputMode,
               isRequested: false,
             });
-            if (state.hostUserId) {
-              coopClient.start(state.hostUserId, controlMsg.slot, controlMsg.inputMode);
-            }
+            coopClient.start(hostId, slotNum, controlMsg.inputMode);
           } else {
             set({ isRequested: false });
           }
@@ -136,20 +139,21 @@ export const useCoopStore = create<CoopState>((set, get) => ({
         }
 
         case 'coop:sync_players': {
+          const hostId = controlMsg.hostUserId || state.hostUserId || senderPeerId;
           set({
             players: controlMsg.players,
             isCoopActive: true,
-            hostUserId: controlMsg.hostUserId,
+            hostUserId: hostId,
           });
 
           // Verify if I was removed or mode changed
-          const myPlayer = controlMsg.players.find((p) => p.userId === (webrtcManager as any).myUserId);
+          const currentUserId = (webrtcManager as any).myUserId;
+          const myPlayer = controlMsg.players.find((p) => p.userId === currentUserId || p.user?.id === currentUserId);
           if (myPlayer) {
-            if (myPlayer.slot !== state.mySlot || myPlayer.inputMode !== state.myInputMode) {
-              set({ mySlot: myPlayer.slot, myInputMode: myPlayer.inputMode });
-              if (state.hostUserId) {
-                coopClient.setMode(myPlayer.inputMode);
-              }
+            const slotNum = Number(myPlayer.slot) as CoopSlot;
+            if (slotNum !== state.mySlot || myPlayer.inputMode !== state.myInputMode) {
+              set({ mySlot: slotNum, myInputMode: myPlayer.inputMode });
+              coopClient.start(hostId, slotNum, myPlayer.inputMode);
             }
           } else if (state.mySlot && !state.isCoopHost) {
             // I was removed from slots
@@ -304,7 +308,7 @@ export const useCoopStore = create<CoopState>((set, get) => ({
 
     // Connect virtual controller / prepare host slot
     if (window.electronAPI?.coopSlotConnect) {
-      await window.electronAPI.coopSlotConnect(assignedSlot, req.requestedMode);
+      await window.electronAPI.coopSlotConnect(Number(assignedSlot), req.requestedMode);
     }
 
     const newPlayer: CoopPlayer = {
@@ -326,20 +330,23 @@ export const useCoopStore = create<CoopState>((set, get) => ({
       pendingRequests: pendingRequests.filter((r) => r.requestId !== requestId),
     });
 
-    // Send direct response to client
+    const myHostId = (webrtcManager as any).myUserId || hostUserId || '';
+
+    // Send direct response to client with explicit hostUserId
     webrtcManager.sendCoopControl(req.userId, {
       type: 'coop:response_join',
       requestId: req.requestId,
       accepted: true,
       slot: assignedSlot,
       inputMode: req.requestedMode,
+      hostUserId: myHostId,
     });
 
     // Broadcast updated player list to room
     webrtcManager.sendCoopControl(null, {
       type: 'coop:sync_players',
       players: updatedPlayers,
-      hostUserId: hostUserId || '',
+      hostUserId: myHostId,
     });
   },
 

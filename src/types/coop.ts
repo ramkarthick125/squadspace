@@ -101,6 +101,7 @@ export type CoopControlMessage =
       slot?: CoopSlot;
       inputMode?: CoopInputMode;
       reason?: string;
+      hostUserId?: string;
     }
   | {
       type: 'coop:sync_players';

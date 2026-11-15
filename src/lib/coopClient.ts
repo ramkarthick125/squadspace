@@ -246,6 +246,8 @@ class CoopClientEngine {
   public attachKeyboardMouse(containerEl: HTMLElement) {
     this.detachKeyboardMouse();
     this.containerEl = containerEl;
+    this.isActive = true;
+    this.inputMode = 'keyboard_mouse';
 
     // Keyboard events
     this.boundKeyDown = (e: KeyboardEvent) => {
@@ -300,16 +302,48 @@ class CoopClientEngine {
       if (!this.isActive || this.inputMode !== 'keyboard_mouse') return;
       if (!this.containerEl) return;
 
-      const rect = this.containerEl.getBoundingClientRect();
-      const normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      const normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+      const videoEl = this.containerEl.querySelector('video') as HTMLVideoElement | null;
+      let normX = 0;
+      let normY = 0;
+
+      if (videoEl && videoEl.videoWidth && videoEl.videoHeight) {
+        // Calculate exact video content rectangle excluding letterbox / pillarbox black bars
+        const cWidth = videoEl.clientWidth;
+        const cHeight = videoEl.clientHeight;
+        const vAspect = videoEl.videoWidth / videoEl.videoHeight;
+        const cAspect = cWidth / cHeight;
+
+        let rWidth = cWidth;
+        let rHeight = cHeight;
+        let rLeft = 0;
+        let rTop = 0;
+
+        if (cAspect > vAspect) {
+          rWidth = cHeight * vAspect;
+          rLeft = (cWidth - rWidth) / 2;
+        } else {
+          rHeight = cWidth / vAspect;
+          rTop = (cHeight - rHeight) / 2;
+        }
+
+        const rect = videoEl.getBoundingClientRect();
+        const clientX = e.clientX - (rect.left + rLeft);
+        const clientY = e.clientY - (rect.top + rTop);
+
+        normX = Math.max(0, Math.min(1, clientX / rWidth));
+        normY = Math.max(0, Math.min(1, clientY / rHeight));
+      } else {
+        const rect = this.containerEl.getBoundingClientRect();
+        normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+      }
 
       const mouseState: CoopMouseState = {
         event: 'move',
         normX,
         normY,
-        deltaX: e.movementX,
-        deltaY: e.movementY,
+        deltaX: e.movementX || 0,
+        deltaY: e.movementY || 0,
       };
 
       if (this.hostUserId && this.mySlot) {
@@ -323,7 +357,10 @@ class CoopClientEngine {
 
     this.boundMouseDown = (e: MouseEvent) => {
       if (!this.isActive || this.inputMode !== 'keyboard_mouse') return;
-      e.preventDefault();
+      // Focus container for immediate keyboard input
+      if (this.containerEl && document.activeElement !== this.containerEl) {
+        this.containerEl.focus();
+      }
 
       let button: 'left' | 'right' | 'middle' = 'left';
       if (e.button === 2) button = 'right';

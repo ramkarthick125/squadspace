@@ -175,6 +175,11 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
   return (
     <div
       ref={containerRef}
+      onClick={() => {
+        if (containerRef.current) {
+          containerRef.current.focus();
+        }
+      }}
       onMouseMove={handleMouseMove}
       onMouseLeave={() => {
         if (!isPanelOpen && !isJoinModalOpen) {
@@ -182,7 +187,7 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
         }
       }}
       tabIndex={0}
-      className="relative w-full h-full bg-[#0e1013] rounded-2xl overflow-hidden group select-none flex items-center justify-center border border-[#1e1f22] shadow-2xl focus:outline-none"
+      className="relative w-full h-full bg-[#0e1013] rounded-2xl overflow-hidden group select-none flex items-center justify-center border border-[#1e1f22] shadow-2xl focus:outline-none focus:ring-1 focus:ring-discord-blurple/50"
     >
       {/* Video Element without native controls */}
       <video
@@ -195,6 +200,25 @@ export const ScreenShareVideo: React.FC<ScreenShareVideoProps> = ({
         onContextMenu={(e) => e.preventDefault()}
         className="w-full h-full object-contain pointer-events-none select-none bg-black"
       />
+
+      {/* Active Remote Control Banner for Players */}
+      {isPlaying && !isLocal && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+          <div className="flex items-center gap-2 bg-black/85 text-emerald-400 border border-emerald-500/40 px-3.5 py-1.5 rounded-full text-xs font-semibold shadow-2xl backdrop-blur-md animate-fade-in">
+            {myInputMode === 'keyboard_mouse' ? (
+              <>
+                <Keyboard className="w-4 h-4 text-emerald-400" />
+                <span>Remote Control Active (P{mySlot}) &mdash; Click to focus, move cursor & type</span>
+              </>
+            ) : (
+              <>
+                <Gamepad2 className="w-4 h-4 text-purple-400" />
+                <span className="text-purple-300">Virtual Controller Active (P{mySlot}) &mdash; Ready for gaming</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Top Header Overlay Bar */}
       <div

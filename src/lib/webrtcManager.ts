@@ -48,8 +48,8 @@ function injectLowLatencySdp(sdp: string, maxBitrateBps: number = 12_000_000): s
   const result: string[] = [];
   let inVideo = false;
   const maxBitrateKbps = Math.round(maxBitrateBps / 1000);
-  const minBitrateKbps = Math.round(maxBitrateKbps * 0.45);
-  const startBitrateKbps = Math.round(maxBitrateKbps * 0.75);
+  const minBitrateKbps = Math.round(maxBitrateKbps * 0.6); // High floor prevents pixelation during fast motion
+  const startBitrateKbps = Math.round(maxBitrateKbps * 0.85); // Rapid ramp-up immediately to full clarity
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -340,6 +340,53 @@ class WebRTCManager {
   }
 
   /**
+   * Applies hardware-grade high bitrate (12-25 Mbps) and 60 FPS encoding parameters
+   * Enforces maintain-resolution so WebRTC never downscales or pixelates.
+   */
+  public applySenderParameters(peerId: string) {
+    const pc = this.peers.get(peerId);
+    if (!pc) return;
+
+    const addedSenders = this.screenSenders.get(peerId) || [];
+    const videoSender =
+      addedSenders.find((s) => s.track?.kind === 'video') ||
+      pc.getSenders().find(
+        (s) =>
+          s.track &&
+          s.track.kind === 'video' &&
+          s.track.id === this.localScreenStream?.getVideoTracks()[0]?.id
+      );
+
+    if (videoSender && videoSender.getParameters) {
+      try {
+        const params = videoSender.getParameters();
+        if (!params.encodings || params.encodings.length === 0) {
+          params.encodings = [{}];
+        }
+        params.encodings[0].maxBitrate = this.currentScreenBitrate;
+        (params.encodings[0] as any).minBitrate = Math.round(this.currentScreenBitrate * 0.6);
+        params.encodings[0].maxFramerate = 60;
+        params.encodings[0].scaleResolutionDownBy = 1.0;
+        params.encodings[0].priority = 'high';
+        params.encodings[0].networkPriority = 'high';
+        (params as any).degradationPreference = 'maintain-resolution';
+        videoSender
+          .setParameters(params)
+          .then(() => {
+            console.log(
+              `[ScreenShare] Locked 60 FPS high-bitrate parameters for peer ${peerId}: ${this.currentScreenBitrate} bps`
+            );
+          })
+          .catch((err) => {
+            console.warn(`[ScreenShare] setParameters notice for peer ${peerId}:`, err);
+          });
+      } catch (e) {
+        console.warn('[ScreenShare] Error setting sender parameters:', e);
+      }
+    }
+  }
+
+  /**
    * Start real screen sharing with advanced resolution and framerate settings
    * Supports both Electron Native desktopCapturer (sourceId) and Web getDisplayMedia
    */
@@ -378,8 +425,11 @@ class WebRTCManager {
                 mandatory: {
                   chromeMediaSource: 'desktop',
                   chromeMediaSourceId: options.sourceId,
+                  minFrameRate: preset.frameRate,
                   maxFrameRate: preset.frameRate,
+                  minWidth: preset.resolution.width,
                   maxWidth: preset.resolution.width,
+                  minHeight: preset.resolution.height,
                   maxHeight: preset.resolution.height,
                 },
               },
@@ -398,8 +448,11 @@ class WebRTCManager {
                 mandatory: {
                   chromeMediaSource: 'desktop',
                   chromeMediaSourceId: options.sourceId,
+                  minFrameRate: preset.frameRate,
                   maxFrameRate: preset.frameRate,
+                  minWidth: preset.resolution.width,
                   maxWidth: preset.resolution.width,
+                  minHeight: preset.resolution.height,
                   maxHeight: preset.resolution.height,
                 },
               },
@@ -435,9 +488,9 @@ class WebRTCManager {
       // Must execute promptly to preserve user gesture token in modern browsers!
       if (!stream) {
         const displayVideoConstraints: MediaTrackConstraints = {
-          frameRate: { ideal: preset.frameRate, max: preset.frameRate },
-          width: { ideal: preset.resolution.width },
-          height: { ideal: preset.resolution.height },
+          frameRate: { ideal: preset.frameRate, min: Math.min(30, preset.frameRate), max: preset.frameRate },
+          width: { ideal: preset.resolution.width, min: 1280 },
+          height: { ideal: preset.resolution.height, min: 720 },
         };
 
         if (options?.systemAudio !== false) {
@@ -559,6 +612,8 @@ class WebRTCManager {
 
           this.screenSenders.set(peerId, addedSenders);
           this.createAndSendOffer(peerId, preset.maxBitrate);
+          setTimeout(() => this.applySenderParameters(peerId), 500);
+          setTimeout(() => this.applySenderParameters(peerId), 1500);
         });
 
         this.sendSignal({
@@ -808,6 +863,12 @@ class WebRTCManager {
           senderId: this.myUserId,
           channelId: this.currentChannelId || '',
         });
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'connected') {
+        this.applySenderParameters(peerId);
       }
     };
 
@@ -1159,6 +1220,10 @@ class WebRTCManager {
             try {
               await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
 
+              // Enforce 60 FPS high-bitrate encoding parameters now that peer connection is active!
+              this.applySenderParameters(data.senderId);
+              setTimeout(() => this.applySenderParameters(data.senderId), 600);
+
               // Flush pending ICE candidates
               const queued = this.pendingCandidates.get(data.senderId) || [];
               this.pendingCandidates.delete(data.senderId);
@@ -1257,10 +1322,19 @@ class WebRTCManager {
         dc.send(JSON.stringify(packet));
         return true;
       } catch {
-        return false;
+        // Fall back to signaling
       }
     }
-    return false;
+
+    // High-reliability fallback: send via signaling channel so inputs NEVER get dropped!
+    this.sendSignal({
+      type: 'coop-control',
+      targetId,
+      senderId: this.myUserId,
+      channelId: this.currentChannelId || '',
+      payload: packet,
+    });
+    return true;
   }
 
   /**
