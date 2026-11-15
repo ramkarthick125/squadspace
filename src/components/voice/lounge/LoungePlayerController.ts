@@ -2,10 +2,29 @@ import * as THREE from 'three';
 import { LoungeAvatar } from './LoungeAvatar';
 import { LoungeSeatManager, SEAT_DEFINITIONS, SeatDefinition } from './LoungeSeats';
 
+interface ObstacleBox {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
+const FURNITURE_OBSTACLES: ObstacleBox[] = [
+  // 1. Cinema TV Screen & Media Console (Left Wall)
+  { minX: -7.5, maxX: -5.6, minZ: -2.8, maxZ: 1.8 },
+  // 2. Central Coffee Table (Oak table with snacks & controllers)
+  { minX: -1.3, maxX: 0.3, minZ: -0.4, maxZ: 1.2 },
+  // 3. Retro Arcade Cabinet (Gamer Corner)
+  { minX: -6.5, maxX: -4.6, minZ: -5.8, maxZ: -4.0 },
+  // 4. Gaming Table & Booth
+  { minX: -4.8, maxX: -3.2, minZ: -5.0, maxZ: -3.4 },
+];
+
 export class LoungePlayerController {
   public avatar: LoungeAvatar;
   private seatManager: LoungeSeatManager;
   private camera: THREE.Camera;
+  private velocity: THREE.Vector3 = new THREE.Vector3();
 
   // Key state
   private keys: Record<string, boolean> = {
@@ -169,6 +188,7 @@ export class LoungePlayerController {
 
     if (this.isSitting) {
       this.avatar.isMoving = false;
+      this.velocity.set(0, 0, 0);
       return;
     }
 
@@ -182,13 +202,10 @@ export class LoungePlayerController {
     if (this.keys.right) rawMoveX += 1;
 
     const isMoving = rawMoveX !== 0 || rawMoveZ !== 0;
+    const maxSpeed = (this.keys.run || this.isRunning) ? 4.8 : 3.0;
+    const targetVelocity = new THREE.Vector3();
 
     if (isMoving) {
-      if (!this.avatar.isMoving && !this.avatar.currentEmote) {
-        this.avatar.playAnimation((this.keys.run || this.isRunning) ? 'Run' : 'Walk', 0.2);
-      }
-      this.avatar.isMoving = true;
-
       const camForward = new THREE.Vector3();
       this.camera.getWorldDirection(camForward);
       camForward.y = 0;
@@ -202,28 +219,74 @@ export class LoungePlayerController {
         .addScaledVector(camRight, rawMoveX)
         .normalize();
 
-      const speed = (this.keys.run || this.isRunning) ? 4.8 : 3.0;
-      const step = moveDir.clone().multiplyScalar(speed * delta);
-      this.avatar.group.position.add(step);
+      targetVelocity.copy(moveDir).multiplyScalar(maxSpeed);
 
       // Smoothly rotate avatar towards movement direction
       const targetAngle = Math.atan2(moveDir.x, moveDir.z);
       let diff = targetAngle - this.avatar.group.rotation.y;
       while (diff < -Math.PI) diff += Math.PI * 2;
       while (diff > Math.PI) diff -= Math.PI * 2;
-      this.avatar.group.rotation.y += diff * Math.min(1.0, 16 * delta);
+      this.avatar.group.rotation.y += diff * Math.min(1.0, 12.0 * delta);
 
-      // Room boundary collision
-      const pos = this.avatar.group.position;
-      pos.x = THREE.MathUtils.clamp(pos.x, -6.6, 6.4);
-      pos.z = THREE.MathUtils.clamp(pos.z, -5.6, 5.0);
-
-      this.emitState();
+      if (!this.avatar.isMoving && !this.avatar.currentEmote) {
+        this.avatar.playAnimation((this.keys.run || this.isRunning) ? 'Run' : 'Walk', 0.2);
+      }
+      this.avatar.isMoving = true;
     } else {
       if (this.avatar.isMoving && !this.avatar.currentEmote) {
         this.avatar.playAnimation('Idle', 0.25);
       }
       this.avatar.isMoving = false;
+    }
+
+    // Smooth velocity acceleration & inertia damping (weighty physical movement)
+    this.velocity.lerp(targetVelocity, Math.min(1.0, (isMoving ? 10.0 : 12.0) * delta));
+
+    // Collision detection with room boundaries & furniture obstacles
+    const avatarRadius = 0.35;
+    const currentPos = this.avatar.group.position;
+    const nextX = currentPos.x + this.velocity.x * delta;
+    const nextZ = currentPos.z + this.velocity.z * delta;
+
+    // Room boundaries
+    const clampedX = THREE.MathUtils.clamp(nextX, -6.6, 6.4);
+    const clampedZ = THREE.MathUtils.clamp(nextZ, -5.6, 5.0);
+
+    // Test X movement against furniture obstacles
+    let allowX = true;
+    for (const obs of FURNITURE_OBSTACLES) {
+      if (
+        clampedX + avatarRadius > obs.minX &&
+        clampedX - avatarRadius < obs.maxX &&
+        currentPos.z + avatarRadius > obs.minZ &&
+        currentPos.z - avatarRadius < obs.maxZ
+      ) {
+        allowX = false;
+        this.velocity.x = 0;
+        break;
+      }
+    }
+
+    // Test Z movement against furniture obstacles
+    let allowZ = true;
+    for (const obs of FURNITURE_OBSTACLES) {
+      if (
+        currentPos.x + avatarRadius > obs.minX &&
+        currentPos.x - avatarRadius < obs.maxX &&
+        clampedZ + avatarRadius > obs.minZ &&
+        clampedZ - avatarRadius < obs.maxZ
+      ) {
+        allowZ = false;
+        this.velocity.z = 0;
+        break;
+      }
+    }
+
+    if (allowX) currentPos.x = clampedX;
+    if (allowZ) currentPos.z = clampedZ;
+
+    if (isMoving || this.velocity.lengthSq() > 0.001) {
+      this.emitState();
     }
 
     // 2. Check proximity to nearest seat for 'E' prompt

@@ -8,13 +8,19 @@ export class LoungeScene {
   public roomGroup: THREE.Group = new THREE.Group();
   public furnitureGroup: THREE.Group = new THREE.Group();
   public tvScreenLight!: THREE.PointLight;
+  public ambientLight!: THREE.AmbientLight;
+  public dirLight!: THREE.DirectionalLight;
+  public rimLightCyan!: THREE.DirectionalLight;
+  public rimLightPink!: THREE.DirectionalLight;
+  public arcadeGlow!: THREE.PointLight;
   private moonLight!: THREE.PointLight;
   private platformLight!: THREE.PointLight;
+  public currentMood: 'cyber' | 'warm' | 'cinema' = 'cyber';
 
   constructor() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0e0917);
-    this.scene.fog = new THREE.FogExp2(0x0e0917, 0.015);
+    this.scene.fog = new THREE.FogExp2(0x0e0917, 0.012);
 
     this.scene.add(this.roomGroup);
     this.scene.add(this.furnitureGroup);
@@ -32,38 +38,87 @@ export class LoungeScene {
 
   private buildLighting() {
     // 1. Moody Violet Ambient Light
-    const ambientLight = new THREE.AmbientLight(0x382250, 1.85);
-    this.scene.add(ambientLight);
+    this.ambientLight = new THREE.AmbientLight(0x382250, 1.6);
+    this.scene.add(this.ambientLight);
 
-    // 2. Ceiling Warm Fill Light
-    const dirLight = new THREE.DirectionalLight(0xfff5e6, 1.35);
-    dirLight.position.set(-2, 9, 3);
-    this.scene.add(dirLight);
+    // 2. Ceiling Warm Key Light with soft PCF shadow maps
+    this.dirLight = new THREE.DirectionalLight(0xfff5e6, 1.25);
+    this.dirLight.position.set(-2, 9, 3);
+    this.dirLight.castShadow = true;
+    this.dirLight.shadow.mapSize.width = 2048;
+    this.dirLight.shadow.mapSize.height = 2048;
+    this.dirLight.shadow.camera.near = 0.5;
+    this.dirLight.shadow.camera.far = 25;
+    this.dirLight.shadow.camera.left = -9;
+    this.dirLight.shadow.camera.right = 9;
+    this.dirLight.shadow.camera.top = 9;
+    this.dirLight.shadow.camera.bottom = -9;
+    this.dirLight.shadow.bias = -0.0005;
+    this.scene.add(this.dirLight);
 
-    // 3. Neon Crescent Moon Light (Back Wall)
+    // 3. Studio Rim Lights (Party Animals signature silhouette pop!)
+    // Rim Light 1: Cyan rim light from back-right
+    this.rimLightCyan = new THREE.DirectionalLight(0x06b6d4, 1.7);
+    this.rimLightCyan.position.set(6, 4, -7);
+    this.scene.add(this.rimLightCyan);
+
+    // Rim Light 2: Soft magenta rim light from front-left
+    this.rimLightPink = new THREE.DirectionalLight(0xec4899, 1.4);
+    this.rimLightPink.position.set(-6, 3, 6);
+    this.scene.add(this.rimLightPink);
+
+    // 4. Neon Crescent Moon Light (Back Wall)
     this.moonLight = new THREE.PointLight(0xff2a85, 2.6, 9, 1.2);
     this.moonLight.position.set(-1.2, 3.65, -5.8);
     this.scene.add(this.moonLight);
 
-    // 4. TV Screen Glow Light (TV on the LEFT wall X = -7.28)
-    this.tvScreenLight = new THREE.PointLight(0x818cf8, 2.2, 11, 1.3);
+    // 5. TV Screen Glow Light (TV on the LEFT wall X = -7.28)
+    this.tvScreenLight = new THREE.PointLight(0x38bdf8, 2.5, 12, 1.2);
     this.tvScreenLight.position.set(-5.6, 2.4, -0.6);
     this.scene.add(this.tvScreenLight);
 
-    // 5. Tripod Floor Lamp Light (Warm golden glow next to TV)
-    const lampLight = new THREE.PointLight(0xfef08a, 2.0, 7, 1.3);
+    // 6. Retro Arcade Cabinet Purple Glow
+    this.arcadeGlow = new THREE.PointLight(0xa855f7, 2.2, 7, 1.3);
+    this.arcadeGlow.position.set(-5.4, 1.6, -4.8);
+    this.scene.add(this.arcadeGlow);
+
+    // 7. Tripod Floor Lamp Light (Warm golden glow next to TV)
+    const lampLight = new THREE.PointLight(0xfef08a, 1.8, 7, 1.3);
     lampLight.position.set(-6.2, 2.0, 2.2);
     this.scene.add(lampLight);
 
-    // 6. Red Rug Candle / Lantern Light
-    const candleLight = new THREE.PointLight(0xf59e0b, 1.8, 5, 1.5);
-    candleLight.position.set(0.6, 0.55, 4.2);
-    this.scene.add(candleLight);
-
-    // 7. Beanbag Platform Warm Golden Underglow Light Strip
-    this.platformLight = new THREE.PointLight(0xf59e0b, 1.9, 6, 1.4);
+    // 8. Beanbag Platform Warm Golden Underglow Light Strip
+    this.platformLight = new THREE.PointLight(0xf59e0b, 1.8, 6, 1.4);
     this.platformLight.position.set(5.2, 0.4, 0);
     this.scene.add(this.platformLight);
+  }
+
+  public setMood(mode: 'cyber' | 'warm' | 'cinema') {
+    this.currentMood = mode;
+    if (mode === 'cyber') {
+      this.ambientLight.color.setHex(0x382250);
+      this.ambientLight.intensity = 1.6;
+      this.dirLight.color.setHex(0xfff5e6);
+      this.dirLight.intensity = 1.25;
+      this.rimLightCyan.intensity = 1.7;
+      this.rimLightPink.intensity = 1.4;
+      this.tvScreenLight.intensity = 2.5;
+    } else if (mode === 'warm') {
+      this.ambientLight.color.setHex(0x5a3020);
+      this.ambientLight.intensity = 1.8;
+      this.dirLight.color.setHex(0xfef08a);
+      this.dirLight.intensity = 1.5;
+      this.rimLightCyan.intensity = 0.6;
+      this.rimLightPink.intensity = 1.1;
+      this.tvScreenLight.intensity = 1.8;
+    } else if (mode === 'cinema') {
+      this.ambientLight.color.setHex(0x100b1d);
+      this.ambientLight.intensity = 0.5;
+      this.dirLight.intensity = 0.2;
+      this.rimLightCyan.intensity = 0.4;
+      this.rimLightPink.intensity = 0.3;
+      this.tvScreenLight.intensity = 3.6;
+    }
   }
 
   private createWoodFloorTexture(): THREE.CanvasTexture {
@@ -670,10 +725,56 @@ export class LoungeScene {
         new THREE.BoxGeometry(0.22, 0.03, 0.28),
         new THREE.MeshStandardMaterial({ color: bookColors[i], roughness: 0.4 })
       );
-      book.position.set(-0.16, 0.38 + i * 0.032, 0.04);
+      book.position.set(-0.24, 0.38 + i * 0.032, 0.12);
       book.rotation.y = 0.1 * i;
       coffeeTableGroup.add(book);
     }
+
+    // Party Snacks 1: Fluffy Popcorn Bowl
+    const bowlMat = new THREE.MeshStandardMaterial({ color: 0xf43f5e, roughness: 0.3 });
+    const popcornBowl = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.09, 0.11, 20), bowlMat);
+    popcornBowl.position.set(0.08, 0.42, 0.18);
+    popcornBowl.castShadow = true;
+    coffeeTableGroup.add(popcornBowl);
+
+    const popcornMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, roughness: 0.85 });
+    for (let p = 0; p < 7; p++) {
+      const pAngle = (p * Math.PI * 2) / 7;
+      const kernel = new THREE.Mesh(new THREE.SphereGeometry(0.038, 8, 8), popcornMat);
+      kernel.position.set(0.08 + Math.cos(pAngle) * 0.06, 0.48, 0.18 + Math.sin(pAngle) * 0.06);
+      coffeeTableGroup.add(kernel);
+    }
+    const centerKernel = new THREE.Mesh(new THREE.SphereGeometry(0.042, 8, 8), popcornMat);
+    centerKernel.position.set(0.08, 0.50, 0.18);
+    coffeeTableGroup.add(centerKernel);
+
+    // Party Snacks 2: Chill Soda Cans
+    const canMat1 = new THREE.MeshStandardMaterial({ color: 0x8b5cf6, metalness: 0.65, roughness: 0.25 });
+    const can1 = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.12, 16), canMat1);
+    can1.position.set(-0.16, 0.42, -0.16);
+    coffeeTableGroup.add(can1);
+
+    const canMat2 = new THREE.MeshStandardMaterial({ color: 0xf97316, metalness: 0.65, roughness: 0.25 });
+    const can2 = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.12, 16), canMat2);
+    can2.position.set(-0.06, 0.42, -0.22);
+    coffeeTableGroup.add(can2);
+
+    // Party Snacks 3: Cute Mint & Pink Gamepad Controllers
+    const padMint = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.025, 0.08),
+      new THREE.MeshStandardMaterial({ color: 0x34d399, roughness: 0.3 })
+    );
+    padMint.position.set(0.22, 0.38, -0.14);
+    padMint.rotation.y = 0.45;
+    coffeeTableGroup.add(padMint);
+
+    const padPink = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.025, 0.08),
+      new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.3 })
+    );
+    padPink.position.set(0.24, 0.38, 0.02);
+    padPink.rotation.y = -0.3;
+    coffeeTableGroup.add(padPink);
 
     const flowerPot = new THREE.Mesh(
       new THREE.CylinderGeometry(0.07, 0.05, 0.11, 16),
@@ -779,6 +880,157 @@ export class LoungeScene {
     );
     lantern.position.set(0.6, 0.37, 4.2);
     this.furnitureGroup.add(lantern);
+
+    // -------------------------------------------------------------
+    // 5. Retro Stylized Arcade Cabinet (Corner at X = -5.35, Z = -4.8)
+    // -------------------------------------------------------------
+    const arcadeGroup = new THREE.Group();
+    arcadeGroup.position.set(-5.35, 0, -4.8);
+    arcadeGroup.rotation.y = Math.PI * 0.25;
+
+    // Cabinet Main Body (Chunky rounded matte purple/indigo)
+    const cabMat = new THREE.MeshStandardMaterial({
+      color: 0x1e1233,
+      roughness: 0.35,
+      metalness: 0.15,
+    });
+    const cabBody = new THREE.Mesh(new THREE.BoxGeometry(0.72, 1.75, 0.76), cabMat);
+    cabBody.position.y = 0.875;
+    cabBody.castShadow = true;
+    cabBody.receiveShadow = true;
+    arcadeGroup.add(cabBody);
+
+    // Side Art (Vibrant cyan & magenta stylized stripes)
+    const sideArtMat = new THREE.MeshStandardMaterial({
+      color: 0xec4899,
+      emissive: 0xdb2777,
+      emissiveIntensity: 0.4,
+      roughness: 0.2,
+    });
+    const sideArtL = new THREE.Mesh(new THREE.BoxGeometry(0.02, 1.5, 0.65), sideArtMat);
+    sideArtL.position.set(-0.37, 0.88, 0);
+    arcadeGroup.add(sideArtL);
+
+    const sideArtR = new THREE.Mesh(new THREE.BoxGeometry(0.02, 1.5, 0.65), sideArtMat);
+    sideArtR.position.set(0.37, 0.88, 0);
+    arcadeGroup.add(sideArtR);
+
+    // Glowing Top Marquee ("ARCADE")
+    const marqueeCanvas = document.createElement('canvas');
+    marqueeCanvas.width = 512;
+    marqueeCanvas.height = 128;
+    const mctx = marqueeCanvas.getContext('2d');
+    if (mctx) {
+      mctx.fillStyle = '#0f051d';
+      mctx.fillRect(0, 0, 512, 128);
+      mctx.strokeStyle = '#a855f7';
+      mctx.lineWidth = 6;
+      mctx.strokeRect(6, 6, 500, 116);
+      mctx.fillStyle = '#f43f5e';
+      mctx.font = '900 46px "Inter", "Impact", sans-serif';
+      mctx.textAlign = 'center';
+      mctx.textBaseline = 'middle';
+      mctx.fillText('★ ARCADE ★', 256, 64);
+    }
+    const marqueeTex = new THREE.CanvasTexture(marqueeCanvas);
+    const marqueeMat = new THREE.MeshStandardMaterial({
+      map: marqueeTex,
+      emissive: 0xf43f5e,
+      emissiveIntensity: 1.8,
+      roughness: 0.2,
+    });
+    const marqueeMesh = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.22, 0.12), marqueeMat);
+    marqueeMesh.position.set(0, 1.62, 0.34);
+    arcadeGroup.add(marqueeMesh);
+
+    // CRT Screen with Retro Pixel Game
+    const screenCanvas = document.createElement('canvas');
+    screenCanvas.width = 256;
+    screenCanvas.height = 256;
+    const sctx = screenCanvas.getContext('2d');
+    if (sctx) {
+      sctx.fillStyle = '#050814';
+      sctx.fillRect(0, 0, 256, 256);
+      sctx.fillStyle = '#10b981';
+      sctx.fillRect(0, 210, 256, 46);
+      sctx.fillStyle = '#f59e0b';
+      sctx.fillRect(110, 160, 36, 45);
+      sctx.fillStyle = '#ffffff';
+      sctx.fillRect(118, 170, 8, 8);
+      sctx.fillRect(130, 170, 8, 8);
+      sctx.fillStyle = '#000000';
+      sctx.fillRect(122, 172, 4, 4);
+      sctx.fillRect(134, 172, 4, 4);
+      sctx.fillStyle = '#e0e7ff';
+      sctx.font = 'bold 20px monospace';
+      sctx.fillText('SCORE 9999', 60, 36);
+    }
+    const screenTex = new THREE.CanvasTexture(screenCanvas);
+    const screenMat = new THREE.MeshStandardMaterial({
+      map: screenTex,
+      emissive: 0x38bdf8,
+      emissiveIntensity: 1.2,
+      roughness: 0.1,
+    });
+    const screenMesh = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.44, 0.05), screenMat);
+    screenMesh.position.set(0, 1.25, 0.31);
+    screenMesh.rotation.x = -0.22;
+    arcadeGroup.add(screenMesh);
+
+    // Control Deck with Dual Joysticks & Buttons
+    const deckMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.4 });
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.08, 0.28), deckMat);
+    deck.position.set(0, 0.94, 0.36);
+    arcadeGroup.add(deck);
+
+    const joyStemMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8, roughness: 0.2 });
+    const p1Stick = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.09, 8), joyStemMat);
+    p1Stick.position.set(-0.18, 1.01, 0.34);
+    arcadeGroup.add(p1Stick);
+    const p1Ball = new THREE.Mesh(new THREE.SphereGeometry(0.024, 12, 12), new THREE.MeshStandardMaterial({ color: 0xef4444 }));
+    p1Ball.position.set(-0.18, 1.06, 0.34);
+    arcadeGroup.add(p1Ball);
+
+    const p2Stick = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.09, 8), joyStemMat);
+    p2Stick.position.set(0.12, 1.01, 0.34);
+    arcadeGroup.add(p2Stick);
+    const p2Ball = new THREE.Mesh(new THREE.SphereGeometry(0.024, 12, 12), new THREE.MeshStandardMaterial({ color: 0x3b82f6 }));
+    p2Ball.position.set(0.12, 1.06, 0.34);
+    arcadeGroup.add(p2Ball);
+
+    const btnColors = [0x10b981, 0xf59e0b, 0xef4444];
+    for (let b = 0; b < 3; b++) {
+      const btnP1 = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.014, 0.014, 0.015, 10),
+        new THREE.MeshStandardMaterial({ color: btnColors[b], roughness: 0.3 })
+      );
+      btnP1.position.set(-0.09 + b * 0.04, 0.99, 0.33);
+      arcadeGroup.add(btnP1);
+
+      const btnP2 = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.014, 0.014, 0.015, 10),
+        new THREE.MeshStandardMaterial({ color: btnColors[b], roughness: 0.3 })
+      );
+      btnP2.position.set(0.21 + b * 0.04, 0.99, 0.33);
+      arcadeGroup.add(btnP2);
+    }
+
+    const coinMat = new THREE.MeshStandardMaterial({
+      color: 0xf59e0b,
+      emissive: 0xf59e0b,
+      emissiveIntensity: 2.0,
+    });
+    const coinDoor = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.36, 0.02), new THREE.MeshStandardMaterial({ color: 0x0a0712 }));
+    coinDoor.position.set(0, 0.45, 0.38);
+    arcadeGroup.add(coinDoor);
+    const coinSlot1 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.03), coinMat);
+    coinSlot1.position.set(-0.06, 0.49, 0.39);
+    arcadeGroup.add(coinSlot1);
+    const coinSlot2 = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.03), coinMat);
+    coinSlot2.position.set(0.06, 0.49, 0.39);
+    arcadeGroup.add(coinSlot2);
+
+    this.furnitureGroup.add(arcadeGroup);
   }
 
   // Load Real High-Quality PBR 3D Models (.GLB)

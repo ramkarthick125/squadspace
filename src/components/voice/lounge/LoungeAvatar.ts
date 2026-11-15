@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { LoungeAssetLoader } from './LoungeAssetLoader';
+import { LoungeMascotBuilder, MascotType, MASCOT_PRESETS } from './LoungeMascotBuilder';
 
 export interface AvatarOptions {
   userId: string;
   displayName: string;
+  mascotType?: MascotType;
   shirtColor?: string | number;
   pantsColor?: string | number;
   skinColor?: string | number;
@@ -17,6 +19,7 @@ export class LoungeAvatar {
   public userId: string;
   public displayName: string;
   public isLocal: boolean;
+  public mascotType: MascotType = 'corgi';
 
   // Real 3D Skeletal Mesh & Animation Mixer
   private modelRoot: THREE.Object3D | null = null;
@@ -24,6 +27,8 @@ export class LoungeAvatar {
   private actions: Map<string, THREE.AnimationAction> = new Map();
   private currentAction: THREE.AnimationAction | null = null;
   private currentActionName: string = 'Idle';
+  private mascotUpdater: ((time: number, isMoving: boolean) => void) | null = null;
+  private accessoriesGroup: THREE.Group | null = null;
 
   // Floating Name Badge & Overlays
   private nameSprite!: THREE.Sprite;
@@ -45,6 +50,7 @@ export class LoungeAvatar {
     this.userId = options.userId;
     this.displayName = options.displayName;
     this.isLocal = !!options.isLocal;
+    this.mascotType = options.mascotType || 'corgi';
 
     this.buildNameBadge();
     this.load3DModel(options);
@@ -59,24 +65,24 @@ export class LoungeAvatar {
       const model = SkeletonUtils.clone(gltf.scene);
       this.modelRoot = model;
 
-      // Realistic scale (~1.8m height)
-      model.scale.set(0.58, 0.58, 0.58);
+      // Chubby stylized mascot proportions (slightly stockier, shorter, cute Party Animals look)
+      model.scale.set(0.68, 0.62, 0.68);
       model.position.set(0, 0, 0);
 
-      // Enable shadows and PBR shading
+      // Enable shadows and soft clay PBR shading
       model.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
           const mesh = child as THREE.Mesh;
           mesh.castShadow = true;
           mesh.receiveShadow = true;
 
-          // Clone and configure materials
+          // Clone and configure materials for smooth matte clay feel
           if (mesh.material) {
             const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
             const clonedMats = mats.map((m) => {
               const cm = (m as THREE.MeshStandardMaterial).clone();
-              cm.roughness = 0.55;
-              cm.metalness = 0.05;
+              cm.roughness = 0.72; // Soft clay / silicone roughness
+              cm.metalness = 0.04;
               return cm;
             });
             mesh.material = Array.isArray(mesh.material) ? clonedMats : clonedMats[0];
@@ -103,13 +109,56 @@ export class LoungeAvatar {
         this.currentActionName = 'Idle';
       }
 
-      // Apply initial outfit if local player
+      // Attach Party Animals mascot ears, tail, headset, and accessories
+      this.applyMascotAccessories(this.mascotType);
+
+      // Apply initial outfit if customized
       if (options.shirtColor || options.pantsColor || options.hairColor || options.skinColor) {
         this.setOutfit(options.shirtColor, options.pantsColor, options.hairColor, options.skinColor);
       }
     } catch (err) {
       console.warn('[LoungeAvatar] Error loading 3D character model:', err);
     }
+  }
+
+  public applyMascotAccessories(type: MascotType) {
+    if (!this.modelRoot) return;
+    this.mascotType = type;
+    const config = MASCOT_PRESETS[type] || MASCOT_PRESETS.corgi;
+
+    // Remove existing accessories if any
+    if (this.accessoriesGroup) {
+      this.modelRoot.remove(this.accessoriesGroup);
+      this.accessoriesGroup = null;
+      this.mascotUpdater = null;
+    }
+
+    const { accessoriesGroup, update } = LoungeMascotBuilder.attachMascotFeatures(this.modelRoot, config);
+    this.accessoriesGroup = accessoriesGroup;
+    this.mascotUpdater = update;
+
+    // Apply thematic colors to body and clothes
+    this.modelRoot.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        materials.forEach((mat) => {
+          if (mat && (mat as THREE.MeshStandardMaterial).isMeshStandardMaterial) {
+            const stdMat = mat as THREE.MeshStandardMaterial;
+            const name = (stdMat.name || '').toLowerCase();
+            if (name.includes('skin') || name.includes('body')) {
+              stdMat.color.set(config.primaryColor);
+            } else if (name.includes('shirt')) {
+              stdMat.color.set(config.outfitColor);
+            } else if (name.includes('pants')) {
+              stdMat.color.set(0x1e293b); // Dark stylish pants
+            } else if (name.includes('face') || name.includes('hair')) {
+              stdMat.color.set(config.secondaryColor);
+            }
+          }
+        });
+      }
+    });
   }
 
   public setOutfit(shirt?: string | number, pants?: string | number, hair?: string | number, skin?: string | number) {
@@ -417,10 +466,30 @@ export class LoungeAvatar {
     });
   }
 
+  public setSpeaking(isSpeaking: boolean) {
+    if (this.isSpeaking !== isSpeaking) {
+      this.isSpeaking = isSpeaking;
+      if (this.nameSprite && this.nameSprite.material.map) {
+        const texture = this.nameSprite.material.map as THREE.CanvasTexture;
+        const canvas = texture.image as HTMLCanvasElement;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          this.drawNameBadgeCanvas(ctx, canvas.width, canvas.height);
+          texture.needsUpdate = true;
+        }
+      }
+    }
+  }
+
   public update(delta: number) {
     // 1. Advance real skeletal animation mixer
     if (this.mixer) {
       this.mixer.update(delta);
+    }
+
+    // 2. Animate mascot accessories (floppy ear wiggles and tail wags!)
+    if (this.mascotUpdater) {
+      this.mascotUpdater(Date.now() * 0.001, this.isMoving);
     }
 
     // 2. Handle active emotes timeout

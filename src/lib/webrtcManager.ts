@@ -1358,6 +1358,16 @@ class WebRTCManager {
           sentViaDataChannel = true;
         } catch {}
       }
+    } else {
+      // Broadcast to all active peer data channels
+      this.coopDataChannels.forEach((dc) => {
+        if (dc && dc.readyState === 'open') {
+          try {
+            dc.send(JSON.stringify(payload));
+            sentViaDataChannel = true;
+          } catch {}
+        }
+      });
     }
 
     // Also send via signaling channel for guaranteed delivery
