@@ -2,26 +2,22 @@ import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import {
-  Maximize2,
-  Minimize2,
-  Tv,
-  Users,
   Compass,
-  Volume2,
-  VolumeX,
+  Tv,
+  Armchair,
+  LogOut,
   Mic,
   MicOff,
   Headphones,
   ScreenShare,
-  Sparkles,
-  Smile,
-  LogOut,
-  Armchair,
+  User,
 } from 'lucide-react';
 import { Channel, UserProfile, VoiceParticipant } from '../../../types';
 import { LoungeScene } from './LoungeScene';
 import { LoungeTV } from './LoungeTV';
 import { LoungeSeatManager, SEAT_DEFINITIONS, SeatDefinition } from './LoungeSeats';
+import { LoungeAvatar } from './LoungeAvatar';
+import { LoungePlayerController } from './LoungePlayerController';
 
 interface Lounge3DViewProps {
   channel: Channel;
@@ -58,21 +54,23 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
   const sceneRef = useRef<LoungeScene | null>(null);
   const tvRef = useRef<LoungeTV | null>(null);
   const seatManagerRef = useRef<LoungeSeatManager | null>(null);
+  const playerControllerRef = useRef<LoungePlayerController | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
 
   const [hoveredSeat, setHoveredSeat] = useState<SeatDefinition | null>(null);
-  const [currentSeat, setCurrentSeat] = useState<SeatDefinition | null>(null);
-  const [cameraView, setCameraView] = useState<'iso' | 'tv' | 'seat'>('iso');
+  const [nearestSeat, setNearestSeat] = useState<SeatDefinition | null>(null);
+  const [isSitting, setIsSitting] = useState<boolean>(false);
+  const [cameraView, setCameraView] = useState<'iso' | 'tv' | 'follow'>('iso');
   const [activeEmote, setActiveEmote] = useState<string | null>(null);
 
-  // Initialize Three.js scene & rendering loop
+  // Initialize Three.js scene, Player Avatar Controller, and Loop
   useEffect(() => {
     if (!containerRef.current) return;
     const container = containerRef.current;
     const width = container.clientWidth;
     const height = container.clientHeight;
 
-    // 1. Renderer
+    // 1. WebGL Renderer
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
       powerPreference: 'high-performance',
@@ -80,13 +78,13 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
+    renderer.toneMappingExposure = 1.2;
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // 2. Camera (default isometric view matching reference screenshot)
-    const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 80);
-    camera.position.set(11.5, 9.0, 11.5);
+    // 2. Camera
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 80);
+    camera.position.set(11.0, 8.5, 11.0); // Cutaway isometric viewpoint
     cameraRef.current = camera;
 
     // 3. Orbit Controls
@@ -94,12 +92,12 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     controls.target.set(-0.8, 1.2, 0);
-    controls.maxPolarAngle = Math.PI / 2.06; // Prevent going underneath floor
-    controls.minDistance = 3.5;
-    controls.maxDistance = 24.0;
+    controls.maxPolarAngle = Math.PI / 2.06;
+    controls.minDistance = 3.0;
+    controls.maxDistance = 25.0;
     controlsRef.current = controls;
 
-    // 4. Scene & TV
+    // 4. Room Scene & TV
     const loungeScene = new LoungeScene();
     sceneRef.current = loungeScene;
 
@@ -110,12 +108,27 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     const seatManager = new LoungeSeatManager(loungeScene.scene);
     seatManagerRef.current = seatManager;
 
+    // 6. Local Human Avatar & WASD Player Controller
+    const localAvatar = new LoungeAvatar({
+      userId: currentUser?.id || 'local-player',
+      displayName: currentUser?.displayName || 'You',
+      isLocal: true,
+    });
+    loungeScene.scene.add(localAvatar.group);
+
+    const playerController = new LoungePlayerController(
+      localAvatar,
+      seatManager,
+      camera
+    );
+    playerControllerRef.current = playerController;
+
+    // Sync remote participants
     if (currentUser) {
       seatManager.syncParticipants(participants, currentUser.id);
-      setCurrentSeat(seatManager.getMySeat());
     }
 
-    // 6. Raycasting for Seat Clicks & Hover
+    // 7. Raycasting for Seat Clicks
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
@@ -137,10 +150,6 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
       }
     };
 
-    const handlePointerDown = () => {
-      renderer.domElement.style.cursor = 'grabbing';
-    };
-
     const handleClick = (e: MouseEvent) => {
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -148,27 +157,17 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
 
       raycaster.setFromCamera(mouse, camera);
       const hits = raycaster.intersectObjects(seatManager.getInteractiveMeshes());
-      if (hits.length > 0 && currentUser) {
+      if (hits.length > 0) {
         const seatId = hits[0].object.userData.seatId;
-        const seatDef = SEAT_DEFINITIONS.find((s) => s.id === seatId);
-        if (seatDef) {
-          const success = seatManager.sitInSeat(seatId, {
-            id: currentUser.id,
-            displayName: currentUser.displayName,
-            avatarUrl: currentUser.avatarUrl,
-          });
-          if (success) {
-            setCurrentSeat(seatDef);
-          }
-        }
+        playerController.sitInSeat(seatId);
+        setIsSitting(true);
       }
     };
 
     renderer.domElement.addEventListener('mousemove', handlePointerMove);
-    renderer.domElement.addEventListener('mousedown', handlePointerDown);
     renderer.domElement.addEventListener('click', handleClick);
 
-    // 7. Resize Handler
+    // 8. Resize Handler
     const handleResize = () => {
       if (!containerRef.current || !rendererRef.current || !cameraRef.current) return;
       const w = containerRef.current.clientWidth;
@@ -179,12 +178,30 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     };
     window.addEventListener('resize', handleResize);
 
-    // 8. Animation Loop
+    // 9. Main Animation Loop
+    const clock = new THREE.Clock();
     let animId: number;
+
     const animate = () => {
       animId = requestAnimationFrame(animate);
-      controls.update();
+      const delta = Math.min(clock.getDelta(), 0.1);
+
+      playerController.update(delta);
+      seatManager.update(delta);
       loungeScene.update();
+
+      setIsSitting(playerController.isSitting);
+      setNearestSeat(playerController.nearestSeat);
+
+      // Camera Follow Mode (tracks avatar smoothly while walking)
+      if (cameraView === 'follow' && !playerController.isSitting) {
+        const avatarPos = localAvatar.group.position;
+        const targetCam = avatarPos.clone().add(new THREE.Vector3(3.8, 3.2, 3.8));
+        camera.position.lerp(targetCam, 5 * delta);
+        controls.target.lerp(avatarPos.clone().add(new THREE.Vector3(0, 0.9, 0)), 5 * delta);
+      }
+
+      controls.update();
       renderer.render(loungeScene.scene, camera);
     };
     animate();
@@ -193,9 +210,9 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
       renderer.domElement.removeEventListener('mousemove', handlePointerMove);
-      renderer.domElement.removeEventListener('mousedown', handlePointerDown);
       renderer.domElement.removeEventListener('click', handleClick);
       controls.dispose();
+      playerController.dispose();
       loungeTV.dispose();
       seatManager.dispose();
       loungeScene.dispose();
@@ -206,7 +223,7 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     };
   }, []);
 
-  // Update TV Stream when screen share state changes
+  // Update TV Stream when screen share changes
   useEffect(() => {
     if (tvRef.current) {
       tvRef.current.setStream(
@@ -216,15 +233,14 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     }
   }, [screenShareStream, screenSharingParticipant]);
 
-  // Sync participants with 3D seat occupancy
+  // Sync participants
   useEffect(() => {
     if (seatManagerRef.current && currentUser) {
       seatManagerRef.current.syncParticipants(participants, currentUser.id);
-      setCurrentSeat(seatManagerRef.current.getMySeat());
     }
   }, [participants, currentUser]);
 
-  // Smooth Camera Transitions for Presets
+  // Smooth Camera Transitions
   const animateCameraTo = (targetPos: THREE.Vector3, targetLook: THREE.Vector3) => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
@@ -232,14 +248,12 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
 
     const startPos = camera.position.clone();
     const startTarget = controls.target.clone();
-    let progress = 0;
-
-    const duration = 750; // ms
+    const duration = 750;
     const startTime = performance.now();
 
     const step = (now: number) => {
-      progress = Math.min((now - startTime) / duration, 1.0);
-      const ease = 0.5 - Math.cos(progress * Math.PI) / 2; // Ease in-out
+      const progress = Math.min((now - startTime) / duration, 1.0);
+      const ease = 0.5 - Math.cos(progress * Math.PI) / 2;
 
       camera.position.lerpVectors(startPos, targetPos, ease);
       controls.target.lerpVectors(startTarget, targetLook, ease);
@@ -252,29 +266,34 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     requestAnimationFrame(step);
   };
 
-  const setViewMode = (mode: 'iso' | 'tv' | 'seat') => {
+  const setViewMode = (mode: 'iso' | 'tv' | 'follow') => {
     setCameraView(mode);
     if (mode === 'iso') {
-      animateCameraTo(new THREE.Vector3(11.5, 9.0, 11.5), new THREE.Vector3(-0.8, 1.2, 0));
+      animateCameraTo(new THREE.Vector3(11.0, 8.5, 11.0), new THREE.Vector3(-0.8, 1.2, 0));
     } else if (mode === 'tv') {
-      animateCameraTo(new THREE.Vector3(1.2, 2.35, 0), new THREE.Vector3(-7.38, 2.35, 0));
-    } else if (mode === 'seat' && currentSeat) {
-      // Zoom right to player's current chair looking at the big screen TV
-      const camPos = currentSeat.position.clone().add(new THREE.Vector3(1.4, 0.8, 0.6));
-      animateCameraTo(camPos, currentSeat.lookAt);
+      animateCameraTo(new THREE.Vector3(0.8, 2.35, 0), new THREE.Vector3(-7.28, 2.35, 0));
+    } else if (mode === 'follow' && playerControllerRef.current) {
+      const avatarPos = playerControllerRef.current.avatar.group.position;
+      animateCameraTo(
+        avatarPos.clone().add(new THREE.Vector3(3.8, 3.2, 3.8)),
+        avatarPos.clone().add(new THREE.Vector3(0, 0.9, 0))
+      );
     }
   };
 
   const handleStandUp = () => {
-    if (seatManagerRef.current) {
-      seatManagerRef.current.standUp();
-      setCurrentSeat(null);
+    if (playerControllerRef.current) {
+      playerControllerRef.current.standUp();
+      setIsSitting(false);
     }
   };
 
-  const triggerEmote = (emoteName: string) => {
-    setActiveEmote(emoteName);
-    setTimeout(() => setActiveEmote(null), 3000);
+  const handleTriggerEmote = (emoteName: string) => {
+    if (playerControllerRef.current) {
+      playerControllerRef.current.playEmote(emoteName);
+      setActiveEmote(emoteName);
+      setTimeout(() => setActiveEmote(null), 3000);
+    }
   };
 
   const occupiedCount = seatManagerRef.current ? seatManagerRef.current.getOccupancyCount() : 0;
@@ -286,21 +305,21 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
 
       {/* Top Floating Glass Header HUD */}
       <div className="absolute top-3 left-4 right-4 flex items-center justify-between pointer-events-none z-10">
-        <div className="flex items-center gap-2.5 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 shadow-xl pointer-events-auto">
+        <div className="flex items-center gap-2.5 bg-black/70 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 shadow-2xl pointer-events-auto">
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-white font-bold text-xs">#{channel.name} — 3D Lounge</span>
-          <span className="text-xs text-purple-300 font-medium bg-purple-500/20 px-2 py-0.5 rounded-full border border-purple-500/30">
-            {occupiedCount} / 12 Seats Taken
+          <span className="text-white font-bold text-xs">#{channel.name} — 3D Gamer Lounge</span>
+          <span className="text-xs text-purple-300 font-semibold bg-purple-500/20 px-2.5 py-0.5 rounded-full border border-purple-500/30">
+            {occupiedCount + (isSitting ? 0 : 1)} Avatars
           </span>
         </div>
 
-        {/* View Switchers (Isometric, Focus TV, My Seat) & Exit Button */}
+        {/* View Switchers (Isometric, Follow, Focus TV) & Exit Button */}
         <div className="flex items-center gap-2 pointer-events-auto">
-          <div className="flex items-center bg-black/60 backdrop-blur-md p-1 rounded-full border border-white/10 shadow-xl">
+          <div className="flex items-center bg-black/70 backdrop-blur-md p-1 rounded-full border border-white/10 shadow-2xl">
             <button
               onClick={() => setViewMode('iso')}
               title="Isometric Room View"
-              className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 transition ${
+              className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
                 cameraView === 'iso'
                   ? 'bg-purple-600 text-white shadow-md'
                   : 'text-gray-300 hover:text-white hover:bg-white/10'
@@ -311,9 +330,22 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
             </button>
 
             <button
+              onClick={() => setViewMode('follow')}
+              title="Third-Person Follow Avatar"
+              className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                cameraView === 'follow'
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-gray-300 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <User className="w-3.5 h-3.5" />
+              <span>Follow</span>
+            </button>
+
+            <button
               onClick={() => setViewMode('tv')}
               title="Focus Cinema TV Screen"
-              className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 transition ${
+              className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
                 cameraView === 'tv'
                   ? 'bg-purple-600 text-white shadow-md'
                   : 'text-gray-300 hover:text-white hover:bg-white/10'
@@ -322,27 +354,12 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
               <Tv className="w-3.5 h-3.5" />
               <span>TV Screen</span>
             </button>
-
-            {currentSeat && (
-              <button
-                onClick={() => setViewMode('seat')}
-                title="View from my chair"
-                className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 transition ${
-                  cameraView === 'seat'
-                    ? 'bg-purple-600 text-white shadow-md'
-                    : 'text-gray-300 hover:text-white hover:bg-white/10'
-                }`}
-              >
-                <Armchair className="w-3.5 h-3.5" />
-                <span>My Seat</span>
-              </button>
-            )}
           </div>
 
-          {currentSeat && (
+          {isSitting && (
             <button
               onClick={handleStandUp}
-              className="bg-black/60 hover:bg-white/10 text-gray-200 hover:text-white px-3 py-1.5 rounded-full text-xs font-medium border border-white/10 backdrop-blur-md transition shadow"
+              className="bg-purple-600 hover:bg-purple-500 text-white px-3.5 py-1.5 rounded-full text-xs font-bold border border-purple-400 backdrop-blur-md transition shadow cursor-pointer"
             >
               Stand Up
             </button>
@@ -351,7 +368,7 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
           <button
             onClick={onExit}
             title="Return to standard 2D voice grid"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 text-white backdrop-blur-md border border-white/15 transition shadow cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 text-white backdrop-blur-md border border-white/15 transition shadow cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
             <span>2D View</span>
@@ -359,55 +376,84 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
         </div>
       </div>
 
-      {/* Hovered Seat Notification Pill */}
-      {hoveredSeat && (
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/75 backdrop-blur-md text-white text-xs px-4 py-1.5 rounded-full border border-purple-500/50 shadow-2xl pointer-events-none animate-fade-in flex items-center gap-2">
+      {/* Proximity Sit Prompt (Press E) */}
+      {!isSitting && nearestSeat && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/85 backdrop-blur-md text-white text-xs px-5 py-2 rounded-full border border-emerald-400 shadow-2xl pointer-events-none animate-pulse flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: nearestSeat.color }} />
+          <span>Press <strong>E</strong> or click to sit in <strong>{nearestSeat.name}</strong></span>
+        </div>
+      )}
+
+      {/* Hovered Seat Ring Pill */}
+      {hoveredSeat && !nearestSeat && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md text-white text-xs px-4 py-1.5 rounded-full border border-purple-500/50 shadow-2xl pointer-events-none flex items-center gap-2">
           <span className="w-2 h-2 rounded-full" style={{ backgroundColor: hoveredSeat.color }} />
           <span>Click to sit in <strong>{hoveredSeat.name}</strong></span>
         </div>
       )}
 
+      {/* Seated Notification */}
+      {isSitting && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md text-purple-200 text-xs px-4 py-1.5 rounded-full border border-purple-500/50 shadow-2xl pointer-events-none flex items-center gap-2">
+          <Armchair className="w-3.5 h-3.5 text-purple-400" />
+          <span>You are seated! Press <strong>W</strong>, <strong>Space</strong>, or <strong>E</strong> to walk</span>
+        </div>
+      )}
+
       {/* Active Emote Float Notification */}
       {activeEmote && (
-        <div className="absolute top-28 left-1/2 -translate-x-1/2 bg-purple-600/90 backdrop-blur-md text-white font-bold text-sm px-5 py-2 rounded-full shadow-2xl animate-bounce border border-purple-400">
+        <div className="absolute top-28 left-1/2 -translate-x-1/2 bg-purple-600 text-white font-extrabold text-sm px-6 py-2 rounded-full shadow-2xl animate-bounce border border-purple-300">
           ✨ {activeEmote}!
         </div>
       )}
 
-      {/* Bottom Controls Hotbar (Emotes, TV Streaming, Voice Mute/Deafen) */}
-      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-3 z-10">
-        {/* Emotes Bar (Matching Reference Screenshot) */}
-        <div className="flex items-center bg-black/75 backdrop-blur-xl px-3 py-2 rounded-2xl border border-white/15 shadow-2xl gap-1.5">
+      {/* Bottom Controls Hotbar (WASD Guide, Emotes with Animations, TV Streaming, Mic/Deafen) */}
+      <div className="absolute bottom-5 left-1/2 -translate-x-1/2 flex items-center gap-3 z-10 max-w-full px-4">
+        {/* WASD Movement Hint Pill */}
+        <div className="hidden lg:flex items-center gap-1.5 bg-black/70 backdrop-blur-xl px-3 py-2 rounded-2xl border border-white/10 text-[11px] text-gray-300">
+          <span className="px-1.5 py-0.5 bg-white/15 rounded text-white font-mono font-bold">W</span>
+          <span className="px-1.5 py-0.5 bg-white/15 rounded text-white font-mono font-bold">A</span>
+          <span className="px-1.5 py-0.5 bg-white/15 rounded text-white font-mono font-bold">S</span>
+          <span className="px-1.5 py-0.5 bg-white/15 rounded text-white font-mono font-bold">D</span>
+          <span className="ml-1 text-gray-400">to move</span>
+        </div>
+
+        {/* Emotes Bar (Matching Reference Screenshot with real character animations!) */}
+        <div className="flex items-center bg-black/80 backdrop-blur-xl px-3 py-2 rounded-2xl border border-white/15 shadow-2xl gap-1">
           <button
-            onClick={() => triggerEmote('Waved')}
-            className="px-3 py-1.5 rounded-xl text-xs font-semibold text-gray-300 hover:text-white hover:bg-white/10 transition flex items-center gap-1.5 cursor-pointer"
+            onClick={() => handleTriggerEmote('Wave')}
+            title="Press 1 to Wave"
+            className="px-3 py-1.5 rounded-xl text-xs font-semibold text-gray-200 hover:text-white hover:bg-white/10 transition flex items-center gap-1.5 cursor-pointer"
           >
             <span>👋</span>
-            <span>Wave</span>
+            <span className="hidden sm:inline">Wave (1)</span>
           </button>
 
           <button
-            onClick={() => triggerEmote('Dancing')}
-            className="px-3 py-1.5 rounded-xl text-xs font-semibold text-gray-300 hover:text-white hover:bg-white/10 transition flex items-center gap-1.5 cursor-pointer"
+            onClick={() => handleTriggerEmote('Dance')}
+            title="Press 2 to Dance"
+            className="px-3 py-1.5 rounded-xl text-xs font-semibold text-gray-200 hover:text-white hover:bg-white/10 transition flex items-center gap-1.5 cursor-pointer"
           >
             <span>💃</span>
-            <span>Dance</span>
+            <span className="hidden sm:inline">Dance (2)</span>
           </button>
 
           <button
-            onClick={() => triggerEmote('Cheers')}
-            className="px-3 py-1.5 rounded-xl text-xs font-semibold text-gray-300 hover:text-white hover:bg-white/10 transition flex items-center gap-1.5 cursor-pointer"
+            onClick={() => handleTriggerEmote('Cheers')}
+            title="Press 3 to Cheers"
+            className="px-3 py-1.5 rounded-xl text-xs font-semibold text-gray-200 hover:text-white hover:bg-white/10 transition flex items-center gap-1.5 cursor-pointer"
           >
             <span>🥂</span>
-            <span>Cheers</span>
+            <span className="hidden sm:inline">Cheers (3)</span>
           </button>
 
           <button
-            onClick={() => triggerEmote('Laughed')}
-            className="px-3 py-1.5 rounded-xl text-xs font-semibold text-gray-300 hover:text-white hover:bg-white/10 transition flex items-center gap-1.5 cursor-pointer"
+            onClick={() => handleTriggerEmote('Laugh')}
+            title="Press 4 to Laugh"
+            className="px-3 py-1.5 rounded-xl text-xs font-semibold text-gray-200 hover:text-white hover:bg-white/10 transition flex items-center gap-1.5 cursor-pointer"
           >
             <span>😂</span>
-            <span>Laugh</span>
+            <span className="hidden sm:inline">Laugh (4)</span>
           </button>
 
           <div className="w-[1px] h-5 bg-white/15 mx-1" />

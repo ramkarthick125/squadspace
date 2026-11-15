@@ -134,11 +134,12 @@ export class LoungeTV {
     if (this.tvMesh && this.canvasTexture) {
       const mat = this.tvMesh.material as THREE.MeshStandardMaterial;
       mat.map = this.canvasTexture;
-      mat.emissive = new THREE.Color(0x312e81);
+      mat.emissive = new THREE.Color(0xffffff);
       mat.emissiveMap = this.canvasTexture;
-      mat.emissiveIntensity = 0.4;
+      mat.emissiveIntensity = 0.9;
       mat.roughness = 0.2;
-      mat.metalness = 0.1;
+      mat.metalness = 0.05;
+      mat.side = THREE.DoubleSide;
       mat.needsUpdate = true;
     }
   }
@@ -166,6 +167,12 @@ export class LoungeTV {
     }
 
     this.videoEl.srcObject = stream;
+    this.videoEl.onloadedmetadata = () => {
+      this.videoEl?.play().catch(() => {});
+      if (this.videoTexture) {
+        this.videoTexture.needsUpdate = true;
+      }
+    };
     this.videoEl.play().catch(() => {});
 
     if (this.videoTexture) {
@@ -182,9 +189,10 @@ export class LoungeTV {
       mat.map = this.videoTexture;
       mat.emissive = new THREE.Color(0xffffff);
       mat.emissiveMap = this.videoTexture;
-      mat.emissiveIntensity = 0.95;
+      mat.emissiveIntensity = 1.0;
       mat.roughness = 0.1;
       mat.metalness = 0.05;
+      mat.side = THREE.DoubleSide;
       mat.needsUpdate = true;
     }
   }

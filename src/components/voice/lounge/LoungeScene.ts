@@ -1,17 +1,16 @@
 import * as THREE from 'three';
-import { SEAT_DEFINITIONS } from './LoungeSeats';
 
 export class LoungeScene {
   public scene: THREE.Scene;
   public tvMesh!: THREE.Mesh;
   public roomGroup: THREE.Group = new THREE.Group();
-  private furnitureGroup: THREE.Group = new THREE.Group();
+  public furnitureGroup: THREE.Group = new THREE.Group();
   private tvScreenLight!: THREE.PointLight;
 
   constructor() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0e0a17);
-    this.scene.fog = new THREE.FogExp2(0x0e0a17, 0.022);
+    this.scene.fog = new THREE.FogExp2(0x0e0a17, 0.02);
 
     this.scene.add(this.roomGroup);
     this.scene.add(this.furnitureGroup);
@@ -25,33 +24,33 @@ export class LoungeScene {
   }
 
   private buildLighting() {
-    // 1. Soft moody violet/dark ambient light
-    const ambientLight = new THREE.AmbientLight(0x2a1d40, 1.4);
+    // 1. Warm moody violet ambient light
+    const ambientLight = new THREE.AmbientLight(0x352352, 1.6);
     this.scene.add(ambientLight);
 
-    // 2. Main ceiling directional light
-    const dirLight = new THREE.DirectionalLight(0xfff1e6, 1.2);
-    dirLight.position.set(5, 8, 4);
+    // 2. Main warm ceiling spotlight
+    const dirLight = new THREE.DirectionalLight(0xfff3e0, 1.4);
+    dirLight.position.set(4, 9, 4);
     this.scene.add(dirLight);
 
     // 3. Neon Moon Magenta Point Light
-    const moonLight = new THREE.PointLight(0xf43f5e, 2.2, 8, 1.2);
-    moonLight.position.set(0, 3.8, -5.6);
+    const moonLight = new THREE.PointLight(0xff2a85, 2.8, 9, 1.2);
+    moonLight.position.set(0, 3.8, -5.8);
     this.scene.add(moonLight);
 
-    // 4. TV Screen Glow Light (reflects dynamic video onto nearby couches)
-    this.tvScreenLight = new THREE.PointLight(0x818cf8, 1.5, 9, 1.4);
-    this.tvScreenLight.position.set(-5.5, 2.2, 0);
+    // 4. TV Screen Glow Light (reflects video glow onto room)
+    this.tvScreenLight = new THREE.PointLight(0x818cf8, 1.6, 9, 1.3);
+    this.tvScreenLight.position.set(-5.5, 2.35, 0);
     this.scene.add(this.tvScreenLight);
 
     // 5. Window Platform Warm Amber LED Strip Light
-    const platformLight = new THREE.PointLight(0xf59e0b, 1.8, 6, 1.5);
+    const platformLight = new THREE.PointLight(0xf59e0b, 2.0, 7, 1.5);
     platformLight.position.set(4.5, 0.6, -0.6);
     this.scene.add(platformLight);
 
-    // 6. Warm Corner Floor Lamp
-    const lampLight = new THREE.PointLight(0xfef08a, 1.6, 7, 1.3);
-    lampLight.position.set(-5.8, 1.8, 4.8);
+    // 6. Corner Floor Lamp (warm golden glow)
+    const lampLight = new THREE.PointLight(0xfef08a, 1.8, 8, 1.2);
+    lampLight.position.set(-5.8, 1.9, 4.8);
     this.scene.add(lampLight);
   }
 
@@ -61,33 +60,33 @@ export class LoungeScene {
     canvas.height = 1024;
     const ctx = canvas.getContext('2d');
     if (ctx) {
-      // Warm dark walnut wood base
-      ctx.fillStyle = '#261912';
+      // Warm dark walnut parquet
+      ctx.fillStyle = '#24160f';
       ctx.fillRect(0, 0, 1024, 1024);
 
-      // Wood plank seams
-      const plankHeight = 32;
-      const plankWidth = 256;
-      ctx.strokeStyle = '#150c07';
-      ctx.lineWidth = 2;
+      const plankH = 32;
+      const plankW = 256;
+      ctx.strokeStyle = '#120a06';
+      ctx.lineWidth = 2.5;
 
-      for (let y = 0; y < 1024; y += plankHeight) {
+      for (let y = 0; y < 1024; y += plankH) {
         ctx.beginPath();
         ctx.moveTo(0, y);
         ctx.lineTo(1024, y);
         ctx.stroke();
 
-        const offset = (Math.floor(y / plankHeight) % 2) * (plankWidth / 2);
-        for (let x = offset; x < 1024; x += plankWidth) {
+        const offset = (Math.floor(y / plankH) % 2) * (plankW / 2);
+        for (let x = offset; x < 1024; x += plankW) {
           ctx.beginPath();
           ctx.moveTo(x, y);
-          ctx.lineTo(x, y + plankHeight);
+          ctx.lineTo(x, y + plankH);
           ctx.stroke();
 
-          // Subtle plank color variation
-          const rand = (Math.sin(x * y) + 1) / 2;
-          ctx.fillStyle = `rgba(${rand > 0.5 ? 40 : 25}, 20, 15, 0.25)`;
-          ctx.fillRect(x, y, plankWidth, plankHeight);
+          // Organic wood grain tones
+          const rand = Math.sin(x * 12.9898 + y * 78.233);
+          const val = Math.floor((rand + 1) * 15);
+          ctx.fillStyle = `rgba(${35 + val}, ${22 + val / 2}, ${15 + val / 3}, 0.35)`;
+          ctx.fillRect(x, y, plankW, plankH);
         }
       }
     }
@@ -102,44 +101,44 @@ export class LoungeScene {
 
   private buildRoomShell() {
     // Floor
-    const floorGeo = new THREE.PlaneGeometry(15, 13);
+    const floorGeo = new THREE.PlaneGeometry(16, 14);
     floorGeo.rotateX(-Math.PI / 2);
     const floorMat = new THREE.MeshStandardMaterial({
       map: this.createWoodFloorTexture(),
-      roughness: 0.55,
+      roughness: 0.5,
       metalness: 0.1,
     });
     const floor = new THREE.Mesh(floorGeo, floorMat);
-    floor.position.set(0, 0, 0);
     this.roomGroup.add(floor);
 
-    // Left Wall (TV Wall)
+    // Walls
     const wallMat = new THREE.MeshStandardMaterial({
-      color: 0x181424,
+      color: 0x161224, // Deep eggplant purple
       roughness: 0.85,
       metalness: 0.05,
     });
 
-    const leftWallGeo = new THREE.PlaneGeometry(13, 5);
+    // Left Wall (TV Wall)
+    const leftWallGeo = new THREE.PlaneGeometry(14, 5.2);
     leftWallGeo.rotateY(Math.PI / 2);
     const leftWall = new THREE.Mesh(leftWallGeo, wallMat);
-    leftWall.position.set(-7.5, 2.5, 0);
+    leftWall.position.set(-7.5, 2.6, 0);
     this.roomGroup.add(leftWall);
 
     // Back Wall
-    const backWallGeo = new THREE.PlaneGeometry(15, 5);
+    const backWallGeo = new THREE.PlaneGeometry(16, 5.2);
     const backWall = new THREE.Mesh(backWallGeo, wallMat);
-    backWall.position.set(0, 2.5, -6.5);
+    backWall.position.set(0, 2.6, -6.5);
     this.roomGroup.add(backWall);
 
-    // Baseboard trim along bottom of walls
-    const trimMat = new THREE.MeshStandardMaterial({ color: 0x0f0b17, roughness: 0.6 });
-    const trimBack = new THREE.Mesh(new THREE.BoxGeometry(15, 0.15, 0.08), trimMat);
-    trimBack.position.set(0, 0.075, -6.46);
+    // Baseboard trim along bottom
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0x0c0814, roughness: 0.5 });
+    const trimBack = new THREE.Mesh(new THREE.BoxGeometry(16, 0.16, 0.08), trimMat);
+    trimBack.position.set(0, 0.08, -6.46);
     this.roomGroup.add(trimBack);
 
-    const trimLeft = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.15, 13), trimMat);
-    trimLeft.position.set(-7.46, 0.075, 0);
+    const trimLeft = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 14), trimMat);
+    trimLeft.position.set(-7.46, 0.08, 0);
     this.roomGroup.add(trimLeft);
   }
 
@@ -151,50 +150,50 @@ export class LoungeScene {
     if (ctx) {
       // Night sky gradient
       const grad = ctx.createLinearGradient(0, 0, 0, 512);
-      grad.addColorStop(0, '#090a16');
-      grad.addColorStop(0.5, '#12162a');
-      grad.addColorStop(1, '#1b1b36');
+      grad.addColorStop(0, '#060712');
+      grad.addColorStop(0.5, '#101428');
+      grad.addColorStop(1, '#1e1c38');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 1024, 512);
 
-      // Stars
+      // Distant stars
       ctx.fillStyle = '#ffffff';
-      for (let i = 0; i < 70; i++) {
-        const sx = (Math.sin(i * 99) * 1000) % 1024;
-        const sy = Math.abs((Math.cos(i * 33) * 500) % 220);
-        ctx.fillRect(Math.abs(sx), sy, 1.5, 1.5);
+      for (let i = 0; i < 90; i++) {
+        const sx = Math.abs((Math.sin(i * 123) * 1000) % 1024);
+        const sy = Math.abs((Math.cos(i * 45) * 400) % 200);
+        ctx.fillRect(sx, sy, 1.5, 1.5);
       }
 
-      // Skyline Skyscrapers
-      const buildingColors = ['#080a14', '#0d1020', '#11152a', '#0a0d1c'];
+      // City Skyscraper Silhouettes
+      const buildingColors = ['#080a14', '#0d1020', '#12162c', '#0a0d1e'];
       let curX = 0;
-      let seed = 42;
+      let seed = 77;
       const pseudoRand = () => {
         seed = (seed * 9301 + 49297) % 233280;
         return seed / 233280;
       };
 
       while (curX < 1024) {
-        const bWidth = 35 + pseudoRand() * 55;
-        const bHeight = 120 + pseudoRand() * 260;
+        const bWidth = 40 + pseudoRand() * 60;
+        const bHeight = 140 + pseudoRand() * 280;
         const col = buildingColors[Math.floor(pseudoRand() * buildingColors.length)];
 
         ctx.fillStyle = col;
         ctx.fillRect(curX, 512 - bHeight, bWidth, bHeight);
 
-        // Lit windows
-        const winCols = ['#fef08a', '#38bdf8', '#f472b6', '#ffffff'];
-        for (let wy = 512 - bHeight + 15; wy < 500; wy += 14) {
-          for (let wx = curX + 6; wx < curX + bWidth - 6; wx += 10) {
-            if (pseudoRand() > 0.45) {
+        // Lit building windows (Yellow, Cyan, White)
+        const winCols = ['#fef08a', '#38bdf8', '#fb7185', '#ffffff'];
+        for (let wy = 512 - bHeight + 14; wy < 500; wy += 14) {
+          for (let wx = curX + 7; wx < curX + bWidth - 7; wx += 11) {
+            if (pseudoRand() > 0.42) {
               ctx.fillStyle = winCols[Math.floor(pseudoRand() * winCols.length)];
               ctx.globalAlpha = 0.6 + pseudoRand() * 0.4;
-              ctx.fillRect(wx, wy, 4, 6);
+              ctx.fillRect(wx, wy, 5, 7);
             }
           }
         }
         ctx.globalAlpha = 1.0;
-        curX += bWidth + 3;
+        curX += bWidth + 4;
       }
     }
 
@@ -204,50 +203,50 @@ export class LoungeScene {
   }
 
   private buildSkylineWindow() {
-    // Window Frame & Cutout on Right Wall (X = 7.4)
     const windowGroup = new THREE.Group();
 
     // Backdrop canvas with glowing city skyline
-    const skyGeo = new THREE.PlaneGeometry(12, 4.5);
+    const skyGeo = new THREE.PlaneGeometry(12, 4.8);
     skyGeo.rotateY(-Math.PI / 2);
     const skyMat = new THREE.MeshBasicMaterial({
       map: this.createCitySkylineTexture(),
+      side: THREE.DoubleSide,
     });
     const skyMesh = new THREE.Mesh(skyGeo, skyMat);
     skyMesh.position.set(7.6, 2.6, -0.5);
     windowGroup.add(skyMesh);
 
-    // Window Mullions / Frame
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x0b0914, roughness: 0.4 });
-    const topBar = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 11), frameMat);
+    // Window Mullions / Dark Steel Frame
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x090710, roughness: 0.3 });
+    const topBar = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 11), frameMat);
     topBar.position.set(7.35, 4.4, -0.5);
     windowGroup.add(topBar);
 
-    const bottomBar = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 11), frameMat);
-    bottomBar.position.set(7.35, 0.8, -0.5);
+    const bottomBar = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 11), frameMat);
+    bottomBar.position.set(7.35, 0.75, -0.5);
     windowGroup.add(bottomBar);
 
     for (let z = -5.0; z <= 4.0; z += 2.5) {
-      const vertMullion = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3.6, 0.08), frameMat);
-      vertMullion.position.set(7.35, 2.6, z);
+      const vertMullion = new THREE.Mesh(new THREE.BoxGeometry(0.12, 3.65, 0.1), frameMat);
+      vertMullion.position.set(7.35, 2.58, z);
       windowGroup.add(vertMullion);
     }
 
     // Elevated Wooden Window Lounge Deck (Platform)
-    const deckGeo = new THREE.BoxGeometry(2.4, 0.28, 7.5);
+    const deckGeo = new THREE.BoxGeometry(2.5, 0.32, 7.8);
     const deckMat = new THREE.MeshStandardMaterial({
       color: 0x3d271a,
-      roughness: 0.5,
+      roughness: 0.45,
     });
     const deck = new THREE.Mesh(deckGeo, deckMat);
-    deck.position.set(5.9, 0.14, -0.6);
+    deck.position.set(5.95, 0.16, -0.6);
     windowGroup.add(deck);
 
-    // LED Amber Underglow Strip along the edge of the deck
-    const stripGeo = new THREE.BoxGeometry(0.06, 0.04, 7.5);
+    // Warm Golden Amber LED Underglow Strip
+    const stripGeo = new THREE.BoxGeometry(0.08, 0.05, 7.8);
     const stripMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
     const strip = new THREE.Mesh(stripGeo, stripMat);
-    strip.position.set(4.68, 0.03, -0.6);
+    strip.position.set(4.68, 0.04, -0.6);
     windowGroup.add(strip);
 
     this.roomGroup.add(windowGroup);
@@ -255,23 +254,23 @@ export class LoungeScene {
 
   private buildNeonMoon() {
     const moonGroup = new THREE.Group();
-    moonGroup.position.set(0, 3.8, -6.4);
+    moonGroup.position.set(0, 3.85, -6.4);
 
     // Crescent Moon Shape
     const moonShape = new THREE.Shape();
-    moonShape.absarc(0, 0, 0.45, 0, Math.PI * 2, false);
+    moonShape.absarc(0, 0, 0.48, 0, Math.PI * 2, false);
     const holePath = new THREE.Path();
-    holePath.absarc(0.16, 0.08, 0.38, 0, Math.PI * 2, true);
+    holePath.absarc(0.17, 0.08, 0.4, 0, Math.PI * 2, true);
     moonShape.holes.push(holePath);
 
-    const extrudeSettings = { depth: 0.04, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 3 };
+    const extrudeSettings = { depth: 0.05, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 3 };
     const moonGeo = new THREE.ExtrudeGeometry(moonShape, extrudeSettings);
 
     const moonMat = new THREE.MeshStandardMaterial({
       color: 0xff3b77,
       emissive: 0xff2a85,
-      emissiveIntensity: 1.8,
-      roughness: 0.2,
+      emissiveIntensity: 2.2,
+      roughness: 0.1,
     });
 
     const moonMesh = new THREE.Mesh(moonGeo, moonMat);
@@ -281,11 +280,11 @@ export class LoungeScene {
     // Framed mini posters on the back wall
     const createMiniPoster = (x: number, y: number, col: number) => {
       const frame = new THREE.Mesh(
-        new THREE.BoxGeometry(0.5, 0.7, 0.04),
-        new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.3 })
+        new THREE.BoxGeometry(0.55, 0.75, 0.04),
+        new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.3 })
       );
       const art = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.42, 0.62),
+        new THREE.PlaneGeometry(0.46, 0.66),
         new THREE.MeshBasicMaterial({ color: col })
       );
       art.position.z = 0.025;
@@ -294,8 +293,8 @@ export class LoungeScene {
       this.roomGroup.add(frame);
     };
 
-    createMiniPoster(-1.2, 3.8, 0x06b6d4);
-    createMiniPoster(1.4, 3.6, 0x10b981);
+    createMiniPoster(-1.3, 3.8, 0x06b6d4);
+    createMiniPoster(1.5, 3.6, 0x10b981);
 
     this.roomGroup.add(moonGroup);
   }
@@ -303,9 +302,10 @@ export class LoungeScene {
   private buildTVUnit() {
     const tvGroup = new THREE.Group();
 
-    // 1. Massive 16:9 Screen Plane
-    const tvWidth = 5.6;
-    const tvHeight = 3.15;
+    const tvWidth = 5.8;
+    const tvHeight = 3.25;
+
+    // 1. TV Screen Mesh (Positioned at X = -7.28, securely IN FRONT of the bezel!)
     const tvScreenGeo = new THREE.PlaneGeometry(tvWidth, tvHeight);
     tvScreenGeo.rotateY(Math.PI / 2);
 
@@ -313,37 +313,38 @@ export class LoungeScene {
       color: 0x1e1b4b,
       roughness: 0.2,
       metalness: 0.1,
+      side: THREE.DoubleSide,
     });
 
     this.tvMesh = new THREE.Mesh(tvScreenGeo, tvMat);
-    this.tvMesh.position.set(-7.38, 2.35, 0);
+    this.tvMesh.position.set(-7.28, 2.35, 0); // Front face at -7.28
     tvGroup.add(this.tvMesh);
 
-    // 2. TV Outer Frame & Bezel
+    // 2. TV Outer Frame & Bezel (Center at -7.40, depth 0.14 -> front at -7.33)
     const bezelMat = new THREE.MeshStandardMaterial({ color: 0x08080c, metalness: 0.8, roughness: 0.3 });
     const bezel = new THREE.Mesh(
-      new THREE.BoxGeometry(0.12, tvHeight + 0.16, tvWidth + 0.16),
+      new THREE.BoxGeometry(0.14, tvHeight + 0.18, tvWidth + 0.18),
       bezelMat
     );
-    bezel.position.set(-7.42, 2.35, 0);
+    bezel.position.set(-7.40, 2.35, 0);
     tvGroup.add(bezel);
 
     // 3. Electric Indigo LED Underglow Strip underneath TV
     const ledMat = new THREE.MeshBasicMaterial({ color: 0x6366f1 });
-    const ledStrip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, tvWidth), ledMat);
-    ledStrip.position.set(-7.34, 0.73, 0);
+    const ledStrip = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, tvWidth), ledMat);
+    ledStrip.position.set(-7.26, 0.68, 0);
     tvGroup.add(ledStrip);
 
     // 4. Low Modern Media Console Shelf
     const shelfMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.4 });
-    const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.45, 5.8), shelfMat);
-    shelf.position.set(-7.0, 0.225, 0);
+    const shelf = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.45, 6.0), shelfMat);
+    shelf.position.set(-6.95, 0.225, 0);
     tvGroup.add(shelf);
 
     // 5. Soundbar on shelf
-    const soundbarMat = new THREE.MeshStandardMaterial({ color: 0x27272a, roughness: 0.2 });
-    const soundbar = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.12, 3.2), soundbarMat);
-    soundbar.position.set(-6.8, 0.51, 0);
+    const soundbarMat = new THREE.MeshStandardMaterial({ color: 0x27272a, roughness: 0.3 });
+    const soundbar = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.12, 3.4), soundbarMat);
+    soundbar.position.set(-6.75, 0.51, 0);
     tvGroup.add(soundbar);
 
     this.roomGroup.add(tvGroup);
@@ -351,118 +352,186 @@ export class LoungeScene {
 
   private buildFurniture() {
     // 1. Central Circular Dark Indigo Rug
-    const rugGeo = new THREE.CircleGeometry(2.6, 48);
+    const rugGeo = new THREE.CircleGeometry(2.7, 48);
     rugGeo.rotateX(-Math.PI / 2);
     const rugMat = new THREE.MeshStandardMaterial({
-      color: 0x241442,
+      color: 0x2a174a,
       roughness: 0.9,
     });
     const rug = new THREE.Mesh(rugGeo, rugMat);
     rug.position.set(-1.0, 0.005, 0.3);
     this.furnitureGroup.add(rug);
 
-    // 2. Central TV Cinema Couches (Purple Plush)
-    const couchMat = new THREE.MeshStandardMaterial({
-      color: 0x581c87, // Royal Purple
-      roughness: 0.6,
-      metalness: 0.05,
+    // 2. Plush Lounge Couches with Sculpted Cushions & Wooden Legs
+    const couchBaseMat = new THREE.MeshStandardMaterial({
+      color: 0x581c87, // Deep royal purple
+      roughness: 0.65,
     });
     const cushionMat = new THREE.MeshStandardMaterial({
-      color: 0x6b21a8,
-      roughness: 0.7,
+      color: 0x7e22ce, // Vibrant purple velvet cushion
+      roughness: 0.55,
+    });
+    const legMat = new THREE.MeshStandardMaterial({
+      color: 0x1c130d, // Dark walnut legs
+      roughness: 0.4,
     });
 
-    const createCouch = (x: number, z: number, rotY: number) => {
+    const createDeluxeCouch = (x: number, z: number, rotY: number) => {
       const couch = new THREE.Group();
-      // Base
-      const base = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.24, 0.75), couchMat);
-      base.position.y = 0.12;
+
+      // Main seat base
+      const base = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.26, 0.85), couchBaseMat);
+      base.position.y = 0.22;
       couch.add(base);
 
-      // Backrest
-      const back = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.45, 0.2), couchMat);
-      back.position.set(0, 0.42, 0.3);
+      // Angled backrest
+      const back = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.52, 0.22), couchBaseMat);
+      back.position.set(0, 0.56, 0.34);
+      back.rotation.x = -0.08;
       couch.add(back);
 
-      // Cushions
-      const cushion1 = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.14, 0.52), cushionMat);
-      cushion1.position.set(-0.38, 0.27, -0.05);
-      couch.add(cushion1);
+      // Thick plush seat cushions (2 seater)
+      const seatCushion1 = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.15, 0.65), cushionMat);
+      seatCushion1.position.set(-0.43, 0.38, -0.05);
+      couch.add(seatCushion1);
 
-      const cushion2 = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.14, 0.52), cushionMat);
-      cushion2.position.set(0.38, 0.27, -0.05);
-      couch.add(cushion2);
+      const seatCushion2 = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.15, 0.65), cushionMat);
+      seatCushion2.position.set(0.43, 0.38, -0.05);
+      couch.add(seatCushion2);
 
-      // Armrests
-      const armL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.38, 0.75), couchMat);
-      armL.position.set(-0.84, 0.28, 0);
+      // Back cushions
+      const backCushion1 = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.38, 0.14), cushionMat);
+      backCushion1.position.set(-0.43, 0.62, 0.24);
+      backCushion1.rotation.x = -0.1;
+      couch.add(backCushion1);
+
+      const backCushion2 = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.38, 0.14), cushionMat);
+      backCushion2.position.set(0.43, 0.62, 0.24);
+      backCushion2.rotation.x = -0.1;
+      couch.add(backCushion2);
+
+      // Curved sculpted armrests
+      const armL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.42, 0.85), couchBaseMat);
+      armL.position.set(-0.95, 0.4, 0);
       couch.add(armL);
 
-      const armR = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.38, 0.75), couchMat);
-      armR.position.set(0.84, 0.28, 0);
+      const armR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.42, 0.85), couchBaseMat);
+      armR.position.set(0.95, 0.4, 0);
       couch.add(armR);
+
+      // 4 Wooden legs
+      const createLeg = (lx: number, lz: number) => {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.02, 0.16, 12), legMat);
+        leg.position.set(lx, 0.08, lz);
+        couch.add(leg);
+      };
+      createLeg(-0.8, -0.32);
+      createLeg(0.8, -0.32);
+      createLeg(-0.8, 0.32);
+      createLeg(0.8, 0.32);
 
       couch.position.set(x, 0, z);
       couch.rotation.y = rotY;
       return couch;
     };
 
-    // Main Couch 1 (Seats 1 & 2)
-    const couch1 = createCouch(-0.8, -0.4, -Math.PI / 2);
+    // Main Couch 1 (Seats 1 & 2 - Front Row)
+    const couch1 = createDeluxeCouch(-0.8, -0.4, -Math.PI / 2);
     this.furnitureGroup.add(couch1);
 
-    // Main Couch 2 (Seats 3 & 4)
-    const couch2 = createCouch(-1.2, 1.2, -Math.PI / 2 + 0.3);
+    // Main Couch 2 (Seats 3 & 4 - Angled Corner)
+    const couch2 = createDeluxeCouch(-1.2, 1.25, -Math.PI / 2 + 0.3);
     this.furnitureGroup.add(couch2);
 
-    // 3. Central Low Coffee Table
-    const tableMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.3 });
-    const coffeeTable = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.28, 24), tableMat);
+    // 3. Central Coffee Table (Round Wood + Drinks)
+    const tableMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.3, metalness: 0.2 });
+    const coffeeTable = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 0.28, 32), tableMat);
     coffeeTable.position.set(-2.6, 0.14, 0.4);
     this.furnitureGroup.add(coffeeTable);
 
+    // Coffee table cups / drinks
+    const cupMat = new THREE.MeshStandardMaterial({ color: 0xf43f5e, roughness: 0.3 });
+    const cup1 = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.035, 0.1, 12), cupMat);
+    cup1.position.set(-2.55, 0.33, 0.35);
+    this.furnitureGroup.add(cup1);
+
+    const cup2 = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.04, 0.12, 12),
+      new THREE.MeshStandardMaterial({ color: 0x38bdf8 })
+    );
+    cup2.position.set(-2.7, 0.34, 0.48);
+    this.furnitureGroup.add(cup2);
+
     // 4. Beanbags on the Elevated Window Deck (Seats 5, 6, 7, 8)
     const createBeanbag = (x: number, z: number, colorHex: number) => {
-      const beanGeo = new THREE.SphereGeometry(0.42, 24, 20);
-      beanGeo.scale(1.1, 0.7, 1.1); // Squished round pouf
+      const beanGroup = new THREE.Group();
+      // Main plush body
+      const beanGeo = new THREE.SphereGeometry(0.44, 24, 20);
+      beanGeo.scale(1.15, 0.72, 1.15); // Squished round pouf
       const beanMat = new THREE.MeshStandardMaterial({
         color: colorHex,
-        roughness: 0.65,
+        roughness: 0.6,
+        metalness: 0.05,
       });
       const bean = new THREE.Mesh(beanGeo, beanMat);
-      bean.position.set(x, 0.42, z);
-      return bean;
+      bean.position.y = 0.26;
+      beanGroup.add(bean);
+
+      // Top indentation / crease
+      const topCrease = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.24, 0.06, 16),
+        new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.8 })
+      );
+      topCrease.position.y = 0.52;
+      beanGroup.add(topCrease);
+
+      beanGroup.position.set(x, 0.16, z); // Sits on platform (height 0.16)
+      return beanGroup;
     };
 
-    this.furnitureGroup.add(createBeanbag(4.6, -2.4, 0x06b6d4)); // Teal
-    this.furnitureGroup.add(createBeanbag(4.6, -1.2, 0xeab308)); // Yellow
-    this.furnitureGroup.add(createBeanbag(4.6, 0.0, 0xf43f5e));  // Coral Red
-    this.furnitureGroup.add(createBeanbag(4.6, 1.2, 0x9333ea));  // Purple
+    this.furnitureGroup.add(createBeanbag(4.6, -2.4, 0x06b6d4)); // Teal (Seat 5)
+    this.furnitureGroup.add(createBeanbag(4.6, -1.2, 0xeab308)); // Yellow (Seat 6)
+    this.furnitureGroup.add(createBeanbag(4.6, 0.0, 0xf43f5e));  // Coral Red (Seat 7)
+    this.furnitureGroup.add(createBeanbag(4.6, 1.2, 0x9333ea));  // Purple (Seat 8)
 
     // 5. Back Squad Table ("Table 1" - Seats 9, 10, 11, 12)
     const squadTable = new THREE.Mesh(
-      new THREE.BoxGeometry(1.2, 0.55, 1.2),
-      new THREE.MeshStandardMaterial({ color: 0x1e3a5f, roughness: 0.4 })
+      new THREE.BoxGeometry(1.3, 0.58, 1.3),
+      new THREE.MeshStandardMaterial({ color: 0x1e3a5f, roughness: 0.35, metalness: 0.1 })
     );
-    squadTable.position.set(-0.2, 0.275, -3.2);
+    squadTable.position.set(-0.2, 0.29, -3.2);
     this.furnitureGroup.add(squadTable);
 
-    // 4 Bucket Armchairs around Squad Table
+    // 4 Modern Bucket Armchairs around Squad Table
     const createArmchair = (x: number, z: number, rotY: number, colorHex: number) => {
       const chair = new THREE.Group();
-      const seat = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.32, 0.32, 0.12, 20),
-        new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.5 })
-      );
+      const chairMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.5 });
+
+      // Seat cushion
+      const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.12, 24), chairMat);
       seat.position.y = 0.28;
       chair.add(seat);
 
-      const back = new THREE.Mesh(
-        new THREE.BoxGeometry(0.5, 0.35, 0.1),
-        new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.5 })
-      );
+      // Curved bucket back
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.38, 0.12), chairMat);
       back.position.set(0, 0.48, 0.26);
+      back.rotation.x = -0.08;
       chair.add(back);
+
+      // Central steel swivel base
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.04, 0.24, 12),
+        new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8, roughness: 0.2 })
+      );
+      pole.position.y = 0.12;
+      chair.add(pole);
+
+      const baseRing = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.24, 0.24, 0.04, 20),
+        new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8, roughness: 0.2 })
+      );
+      baseRing.position.y = 0.02;
+      chair.add(baseRing);
 
       chair.position.set(x, 0, z);
       chair.rotation.y = rotY;
@@ -495,24 +564,23 @@ export class LoungeScene {
 
     // 7. Potted Monstera Plant
     const pot = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.26, 0.2, 0.48, 16),
+      new THREE.CylinderGeometry(0.28, 0.22, 0.5, 18),
       new THREE.MeshStandardMaterial({ color: 0x3f3f46, roughness: 0.6 })
     );
-    pot.position.set(-6.2, 0.24, -5.2);
+    pot.position.set(-6.2, 0.25, -5.2);
     this.furnitureGroup.add(pot);
 
     const plantLeaves = new THREE.Mesh(
-      new THREE.SphereGeometry(0.48, 8, 8),
+      new THREE.SphereGeometry(0.5, 8, 8),
       new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.8 })
     );
-    plantLeaves.position.set(-6.2, 0.75, -5.2);
+    plantLeaves.position.set(-6.2, 0.78, -5.2);
     this.furnitureGroup.add(plantLeaves);
   }
 
   public update() {
-    // Dynamic lighting animation (subtle pulsing of neon moon)
     const time = Date.now() * 0.002;
-    this.tvScreenLight.intensity = 1.4 + Math.sin(time) * 0.15;
+    this.tvScreenLight.intensity = 1.5 + Math.sin(time) * 0.15;
   }
 
   public dispose() {
