@@ -41,22 +41,14 @@ function stopInputHook() {
 // Live Hosted Deployment URL (Discord-style remote auto-updating shell)
 const REMOTE_APP_URL = process.env.SQUADSPACE_REMOTE_URL || 'https://squadspace-flame.vercel.app';
 
-// 1. Hardware Acceleration & Unthrottled 60 FPS GPU Video Pipeline
+// 1. Hardware Acceleration & Silky Smooth 60 FPS VSync-Synchronized Video Pipeline
 app.commandLine.appendSwitch('enable-gpu-rasterization');
-app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-zero-copy');
 app.commandLine.appendSwitch('enable-native-gpu-memory-buffers');
-app.commandLine.appendSwitch('force-high-performance-gpu');
 app.commandLine.appendSwitch('enable-webrtc-hw-encoding');
 app.commandLine.appendSwitch('enable-webrtc-hw-decoding');
-app.commandLine.appendSwitch('webrtc-max-cpu-consumption-percentage', '100');
-app.commandLine.appendSwitch('disable-frame-rate-limit');
-app.commandLine.appendSwitch('disable-gpu-vsync');
-app.commandLine.appendSwitch('disable-renderer-backgrounding');
-app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
-app.commandLine.appendSwitch('disable-background-timer-throttling');
-app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,HardwareMediaKeyHandling,WebRtcAllowWgcScreenCapturer');
-app.commandLine.appendSwitch('enable-features', 'WebRtcHideLocalIpsWithMdns,RunAllCompositorStagesBeforeDraw,AcceleratedVideoDecode,AcceleratedVideoEncode,D3D11VideoDecoder');
+app.commandLine.appendSwitch('disable-features', 'HardwareMediaKeyHandling,WebRtcAllowWgcScreenCapturer');
+app.commandLine.appendSwitch('enable-features', 'WebRtcHideLocalIpsWithMdns,AcceleratedVideoDecode,AcceleratedVideoEncode,D3D11VideoDecoder');
 
 // Register custom protocol for deep linking: squadspace://invite/sqd-xxx
 if (process.defaultApp) {
@@ -345,6 +337,11 @@ ipcMain.on('window:close', () => {
 
 ipcMain.handle('window:isMaximized', () => {
   return mainWindow ? mainWindow.isMaximized() : false;
+});
+
+// Application Version Query
+ipcMain.handle('app:get-version', () => {
+  return app.getVersion();
 });
 
 // Push-to-Talk Target Configuration

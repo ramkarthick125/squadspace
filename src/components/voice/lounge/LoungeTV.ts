@@ -8,6 +8,7 @@ export class LoungeTV {
   private idleCanvas: HTMLCanvasElement | null = null;
   private idleTimer: ReturnType<typeof setInterval> | null = null;
   private currentStream: MediaStream | null = null;
+  private lastRenderedMinute: string = '';
   public sharerName: string = '';
 
   constructor(tvMesh: THREE.Mesh) {
@@ -19,14 +20,20 @@ export class LoungeTV {
 
   private createIdleCanvas() {
     this.idleCanvas = document.createElement('canvas');
-    this.idleCanvas.width = 1920;
-    this.idleCanvas.height = 1080;
+    this.idleCanvas.width = 960;
+    this.idleCanvas.height = 540;
     this.canvasTexture = new THREE.CanvasTexture(this.idleCanvas);
     this.canvasTexture.colorSpace = THREE.SRGBColorSpace;
   }
 
-  private renderIdleCanvas() {
+  private renderIdleCanvas(force = false) {
     if (!this.idleCanvas) return;
+
+    const now = new Date();
+    const timeString = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+    if (!force && this.lastRenderedMinute === timeString) return;
+    this.lastRenderedMinute = timeString;
+
     const ctx = this.idleCanvas.getContext('2d');
     if (!ctx) return;
 
@@ -43,14 +50,14 @@ export class LoungeTV {
 
     // Subtle dark grid
     ctx.strokeStyle = 'rgba(139, 92, 246, 0.08)';
-    ctx.lineWidth = 1.5;
-    for (let x = 0; x < w; x += 60) {
+    ctx.lineWidth = 1.0;
+    for (let x = 0; x < w; x += 40) {
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, h);
       ctx.stroke();
     }
-    for (let y = 0; y < h; y += 60) {
+    for (let y = 0; y < h; y += 40) {
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(w, y);
@@ -59,69 +66,66 @@ export class LoungeTV {
 
     // Outer subtle glowing edge
     ctx.strokeStyle = 'rgba(99, 102, 241, 0.4)';
-    ctx.lineWidth = 8;
-    ctx.strokeRect(16, 16, w - 32, h - 32);
+    ctx.lineWidth = 4;
+    ctx.strokeRect(8, 8, w - 16, h - 16);
 
     // 1. Digital Clock (Image 2: "1:02 PM")
-    const now = new Date();
-    const timeString = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
-
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 155px "Inter", "Segoe UI", sans-serif';
+    ctx.font = 'bold 78px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.shadowColor = 'rgba(129, 140, 248, 0.7)';
-    ctx.shadowBlur = 35;
-    ctx.fillText(timeString, w / 2, h / 2 - 95);
+    ctx.shadowBlur = 20;
+    ctx.fillText(timeString, w / 2, h / 2 - 48);
 
     // 2. Subtitle prompt (Image 2)
     ctx.shadowBlur = 0;
     ctx.fillStyle = '#9ca3af';
-    ctx.font = '500 44px "Inter", "Segoe UI", sans-serif';
-    ctx.fillText('No one is sharing their screen.', w / 2, h / 2 + 35);
+    ctx.font = '500 22px "Inter", "Segoe UI", sans-serif';
+    ctx.fillText('No one is sharing their screen.', w / 2, h / 2 + 18);
 
     ctx.fillStyle = '#6b7280';
-    ctx.font = '400 30px "Inter", "Segoe UI", sans-serif';
-    ctx.fillText('Start sharing your screen or stream to watch together.', w / 2, h / 2 + 98);
+    ctx.font = '400 15px "Inter", "Segoe UI", sans-serif';
+    ctx.fillText('Start sharing your screen or stream to watch together.', w / 2, h / 2 + 50);
 
     // 3. YouTube & Web Screen Share Action Buttons (Image 2)
     const drawPillButton = (x: number, y: number, label: string, isYoutube: boolean) => {
       ctx.save();
-      const bw = 240;
-      const bh = 68;
-      const r = 20;
+      const bw = 130;
+      const bh = 36;
+      const r = 10;
 
       ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.roundRect(x - bw / 2, y - bh / 2, bw, bh, r);
       ctx.fill();
       ctx.stroke();
 
       // Icon
-      const iconX = x - 65;
+      const iconX = x - 35;
       if (isYoutube) {
         ctx.fillStyle = '#ef4444';
         ctx.beginPath();
-        ctx.roundRect(iconX - 18, y - 13, 36, 26, 6);
+        ctx.roundRect(iconX - 10, y - 7, 20, 14, 3);
         ctx.fill();
 
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
-        ctx.moveTo(iconX - 5, y - 7);
-        ctx.lineTo(iconX + 7, y);
-        ctx.lineTo(iconX - 5, y + 7);
+        ctx.moveTo(iconX - 3, y - 4);
+        ctx.lineTo(iconX + 4, y);
+        ctx.lineTo(iconX - 3, y + 4);
         ctx.closePath();
         ctx.fill();
       } else {
         ctx.fillStyle = '#6366f1';
         ctx.beginPath();
-        ctx.arc(iconX, y, 14, 0, Math.PI * 2);
+        ctx.arc(iconX, y, 8, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 16px sans-serif';
+        ctx.font = 'bold 9px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('🌐', iconX, y);
@@ -129,16 +133,16 @@ export class LoungeTV {
 
       // Text
       ctx.fillStyle = '#f3f4f6';
-      ctx.font = '600 24px "Inter", sans-serif';
+      ctx.font = '600 13px "Inter", sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(label, x - 30, y);
+      ctx.fillText(label, x - 18, y);
 
       ctx.restore();
     };
 
-    drawPillButton(w / 2 - 145, h / 2 + 205, 'YouTube', true);
-    drawPillButton(w / 2 + 145, h / 2 + 205, 'Screen Share', false);
+    drawPillButton(w / 2 - 80, h / 2 + 105, 'YouTube', true);
+    drawPillButton(w / 2 + 80, h / 2 + 105, 'Screen Share', false);
 
     if (this.canvasTexture) {
       this.canvasTexture.needsUpdate = true;
@@ -146,7 +150,7 @@ export class LoungeTV {
   }
 
   private startIdleClock() {
-    this.renderIdleCanvas();
+    this.renderIdleCanvas(true);
     this.idleTimer = setInterval(() => {
       if (!this.currentStream) {
         this.renderIdleCanvas();
@@ -156,7 +160,7 @@ export class LoungeTV {
 
   public showIdleScreen() {
     this.stopVideoStream();
-    this.renderIdleCanvas();
+    this.renderIdleCanvas(true);
     if (this.tvMesh && this.canvasTexture) {
       const mat = this.tvMesh.material as THREE.MeshStandardMaterial;
       mat.color.setHex(0xffffff);

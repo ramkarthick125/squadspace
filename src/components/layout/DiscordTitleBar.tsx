@@ -8,6 +8,21 @@ export const DiscordTitleBar: React.FC = () => {
   const isElectron = Boolean(window.electronAPI?.isElectron);
   const [isMaximized, setIsMaximized] = useState(false);
   const [isRestarting, setIsRestarting] = useState(false);
+  const [appVersion, setAppVersion] = useState<string>(() => {
+    try {
+      return (window as any).__APP_VERSION__ || '1.0.8';
+    } catch {
+      return '1.0.8';
+    }
+  });
+
+  useEffect(() => {
+    if (window.electronAPI?.getAppVersion) {
+      window.electronAPI.getAppVersion().then((v) => {
+        if (v) setAppVersion(v);
+      });
+    }
+  }, []);
   const [updateStatus, setUpdateStatus] = useState<{
     status: 'checking' | 'available' | 'up-to-date' | 'downloading' | 'downloaded' | 'error';
     version?: string;
@@ -63,6 +78,9 @@ export const DiscordTitleBar: React.FC = () => {
         </div>
         <span className="font-bold text-[11px] text-discord-gray-300 tracking-wide">
           SquadSpace
+        </span>
+        <span className="text-[9px] px-1.5 py-0.2 rounded bg-[#111214] text-purple-300 font-mono font-semibold border border-purple-500/30" title={`SquadSpace v${appVersion}`}>
+          v{appVersion}
         </span>
         <span className="text-[10px] text-discord-gray-500">
           — {!currentUser ? 'Log In' : activeView === 'dm' ? 'Direct Messages' : serverName || 'Hangout'}

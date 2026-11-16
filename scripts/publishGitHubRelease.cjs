@@ -25,27 +25,24 @@ if (!token) {
 
 const OWNER = 'ramkarthick125';
 const REPO = 'squadspace';
-const TAG = 'v1.0.7';
-const RELEASE_NAME = 'SquadSpace 1.0.7 — Portable In-Place Auto-Update & 60 FPS Optimization';
-const BODY = `## SquadSpace 1.0.7 — Portable In-Place Auto-Update & 60 FPS Optimization
+const TAG = 'v1.0.8';
+const RELEASE_NAME = 'SquadSpace 1.0.8 — VSync Lag Fix & In-App Version Information';
+const BODY = `## SquadSpace 1.0.8 — VSync Lag Fix & In-App Version Information
+
+### 🚀 Complete Performance & Anti-Lag Optimization
+- **Restored Standard VSync Compositor**: Removed dangerous \`disable-gpu-vsync\` and \`disable-frame-rate-limit\` Chromium command-line switches that were causing 100% GPU spin and severe micro-stuttering. The app now syncs cleanly with your monitor refresh rate (60/120/144Hz) with near-zero CPU and GPU load.
+- **Audio Meter Re-Render Thrashing Fixed**: Throttled WebRTC microphone level checks from 144Hz down to 15Hz and eliminated redundant React component re-renders that were causing the entire voice stage and sidebar to re-render dozens of times per second.
+- **Lounge TV Canvas Throttling**: Reduced TV texture upload resolution from 1080p to 540p with minute-level change detection, eliminating GPU texture upload stalls.
+- **Native Hotkey Relaxed Polling**: Optimized background gaming key and mouse polling from 15ms to 35ms, drastically cutting idle CPU wakeups.
+
+### ℹ️ In-App Version Display & Settings Info
+- **Settings Page "App Info & Updates"**: Added a dedicated section in Settings showing the exact installed version (\`v1.0.8\`), distribution mode (Portable in-place silent / Desktop setup), platform architecture (Windows x64), and a one-click **"Check for Updates"** button.
+- **Title Bar Version Badge**: Subtle \`v1.0.8\` chip displayed directly next to the SquadSpace logo in the desktop title bar upon opening the app.
+- **Settings Sidebar Footer**: Shows current build version and native client status at the bottom of the Settings sidebar.
 
 ### ⚡ Seamless Discord-Style Portable Auto-Updates
-- **In-Place Portable Executable Self-Update**: The portable executable (\`SquadSpace.exe\`) now updates itself in-place without triggering the Windows installer setup wizard or prompting the user to install. Clicking "Update ready — Restart" silently swaps the running portable binary and instantly relaunches into the updated version!
-- **Zero-Setup Hassle**: Users who prefer running the standalone portable \`SquadSpace.exe\` keep it in their preferred folder with automatic silent updates.
-- **Custom Install Location for Setup**: For users choosing the full installer (\`SquadSpace Setup 1.0.7.exe\`), the installer prompts for an installation directory with a folder browser.
-
-### 🚀 60 FPS Zero-Lag Rendering & Networking Optimization
-- **Three.js Shadow Map Pruning**: Static sofas and armchairs receive shadows without casting them, removing over 1,200,000 redundant vertices from the shadow pass every frame.
-- **Material Batch Caching**: Furniture submesh materials are cached and shared across instances, drastically reducing GPU draw calls.
-- **High-DPI Display Scaling Lock**: Pixel ratio is locked to 1.0 to guarantee smooth 60 FPS performance without throttling on 2K/4K and scaled Windows displays.
-- **WebSocket Signaling Flood Prevention**: High-frequency avatar movement packets stream exclusively over peer WebRTC DataChannels and local BroadcastChannels, completely eliminating Supabase Realtime WebSocket message spam.
-- **Position Deadband & 55ms Network Throttling**: Stationary and micro-movements are filtered out to maintain a stable, responsive event loop.
-
-### 🐾 Party Animals 3D Lounge
-- **5 Playable Mascot Characters**: 🐶 Corgi Gamer, 🐻 Teddy Bear, 🐕 Shiba Inu, 🐰 Fluffy Bunny, and 🐱 Neon Kitty with bouncy physics ears, wagging tails, headsets, and snapbacks.
-- **Plush Stylized Lounge**: Genuine Khronos velvet sofas, sheen armchairs, Retro Arcade Cabinet, snack tables, and cinema screen.
-- **Smooth Physics & Spring-Arm Camera**: Inertia settling, furniture collision sliding, and spring-arm follow camera.
-- **Multiplayer Synchronisation**: Real-time DataChannel movement sync and emerald speaking halos.
+- **In-Place Portable Self-Update**: Portable \`SquadSpace.exe\` updates silently in-place without opening any Windows installer dialogs or wizard windows.
+- **Installer Option**: \`SquadSpace Setup 1.0.8.exe\` provides a custom installation directory chooser for users who prefer installed setups.
 `;
 
 function apiRequest(method, endpoint, body) {

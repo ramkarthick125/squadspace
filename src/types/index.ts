@@ -131,6 +131,7 @@ export interface DesktopCaptureSource {
 
 export interface ElectronAPI {
   isElectron: boolean;
+  getAppVersion?: () => Promise<string>;
   minimize: () => void;
   maximize: () => void;
   close: () => void;

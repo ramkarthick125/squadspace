@@ -192,7 +192,7 @@ function startPolling(emitCallback) {
         }
       }
     } catch {}
-  }, 15);
+  }, 35);
 }
 
 function stopPolling() {

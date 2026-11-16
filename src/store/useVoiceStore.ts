@@ -123,9 +123,13 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
     }
 
     if (audioLevelUnsub) audioLevelUnsub();
-    audioLevelUnsub = webrtcManager.onAudioLevel((volumePercent, isSpeaking) => {
-      set({ micVolumeLevel: volumePercent });
-      get().setSpeaking(channelId, currentUser.id, isSpeaking);
+    let lastReportedMicVol = -1;
+    audioLevelUnsub = webrtcManager.onAudioLevel((volumePercent) => {
+      // Only trigger state updates when volume level meaningfully changes
+      if (Math.abs(volumePercent - lastReportedMicVol) >= 5 || (volumePercent === 0 && lastReportedMicVol !== 0)) {
+        lastReportedMicVol = volumePercent;
+        set({ micVolumeLevel: volumePercent });
+      }
     });
 
     if (speakingUnsub) speakingUnsub();
@@ -480,6 +484,8 @@ export const useVoiceStore = create<VoiceState>((set, get) => ({
   setSpeaking: (channelId, userId, isSpeaking) => {
     const { participantsByChannel } = get();
     const channelParticipants = participantsByChannel[channelId] || [];
+    const target = channelParticipants.find((p) => p.userId === userId);
+    if (!target || target.isSpeaking === isSpeaking) return; // Prevent redundant re-renders
 
     set({
       participantsByChannel: {

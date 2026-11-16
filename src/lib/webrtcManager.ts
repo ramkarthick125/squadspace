@@ -820,16 +820,29 @@ class WebRTCManager {
 
       const buffer = new Uint8Array(this.analyser.frequencyBinCount);
       let wasSpeaking = false;
+      let lastAudioCheckTime = 0;
+      let lastReportedVolume = -1;
 
       const checkAudioLevel = () => {
         if (!this.analyser) return;
+
+        const now = performance.now();
+        // Throttle audio analysis from 144Hz to ~15Hz (every 66ms) to free CPU and prevent React re-render thrashing
+        if (now - lastAudioCheckTime < 66) {
+          this.animationFrameId = requestAnimationFrame(checkAudioLevel);
+          return;
+        }
+        lastAudioCheckTime = now;
 
         const settings = useSettingsStore.getState();
         const effectiveMuted =
           this.isMuted || (settings.inputMode === 'push_to_talk' && !this.isPttActive);
 
         if (effectiveMuted) {
-          this.onAudioLevelCallbacks.forEach((cb) => cb(0, false));
+          if (lastReportedVolume !== 0) {
+            lastReportedVolume = 0;
+            this.onAudioLevelCallbacks.forEach((cb) => cb(0, false));
+          }
           if (wasSpeaking) {
             wasSpeaking = false;
             this.onSpeakingChangeCallbacks.forEach((cb) => cb(this.myUserId, false));
@@ -848,7 +861,10 @@ class WebRTCManager {
         const volumePercent = Math.min(100, Math.round((average / 128) * 100));
         const isSpeaking = volumePercent > 12;
 
-        this.onAudioLevelCallbacks.forEach((cb) => cb(volumePercent, isSpeaking));
+        if (Math.abs(volumePercent - lastReportedVolume) >= 3 || (volumePercent === 0 && lastReportedVolume !== 0)) {
+          lastReportedVolume = volumePercent;
+          this.onAudioLevelCallbacks.forEach((cb) => cb(volumePercent, isSpeaking));
+        }
 
         if (isSpeaking !== wasSpeaking) {
           wasSpeaking = isSpeaking;

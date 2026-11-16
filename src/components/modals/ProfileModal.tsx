@@ -29,9 +29,51 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
   const [customStatus, setCustomStatus] = useState(currentUser?.customStatus || '');
   const [game, setGame] = useState(currentUser?.gamingActivity?.game || '');
   const [gameDetails, setGameDetails] = useState(currentUser?.gamingActivity?.details || '');
-  const [activeTab, setActiveTab] = useState<'profile' | 'activity' | 'voice' | 'keybinds' | 'security'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'activity' | 'voice' | 'keybinds' | 'security' | 'info'>('profile');
   const [savedNotification, setSavedNotification] = useState(false);
   const [recordingKeybindFor, setRecordingKeybindFor] = useState<keyof KeybindConfig | null>(null);
+
+  // Application Version & Update Check State
+  const [appVersion, setAppVersion] = useState<string>(() => {
+    try {
+      return (window as any).__APP_VERSION__ || '1.0.8';
+    } catch {
+      return '1.0.8';
+    }
+  });
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateMsg, setUpdateMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (window.electronAPI?.getAppVersion) {
+      window.electronAPI.getAppVersion().then((v) => {
+        if (v) setAppVersion(v);
+      });
+    }
+  }, []);
+
+  const handleManualCheckUpdate = async () => {
+    setCheckingUpdate(true);
+    setUpdateMsg('Connecting to GitHub Releases...');
+    try {
+      if (window.electronAPI?.checkForUpdates) {
+        const res = await window.electronAPI.checkForUpdates();
+        if (res && res.status === 'up-to-date') {
+          setUpdateMsg(`You are on the latest version (v${appVersion})!`);
+        } else if (res && res.status === 'checking') {
+          setUpdateMsg('Checking for new releases...');
+        } else {
+          setUpdateMsg(`SquadSpace v${appVersion} • Background update checker active.`);
+        }
+      } else {
+        setUpdateMsg(`SquadSpace Web Client (v${appVersion}) • Always up to date!`);
+      }
+    } catch (err: any) {
+      setUpdateMsg(`Update notice: ${err?.message || 'App is up to date'}`);
+    } finally {
+      setTimeout(() => setCheckingUpdate(false), 800);
+    }
+  };
 
   // Security & Password Reset States
   const [newPasswordInput, setNewPasswordInput] = useState('');
@@ -465,6 +507,23 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                 <span>Security</span>
               </button>
 
+              <button
+                onClick={() => setActiveTab('info')}
+                className={`w-full text-left px-2.5 py-1.5 rounded text-sm font-semibold flex items-center gap-2 transition-colors ${
+                  activeTab === 'info'
+                    ? 'bg-discord-active text-white'
+                    : 'text-discord-gray-300 hover:bg-discord-hover'
+                }`}
+              >
+                <Sparkles className="w-4 h-4 text-purple-400" />
+                <div className="flex items-center justify-between flex-1 min-w-0">
+                  <span>App Info & Updates</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 font-mono font-semibold">
+                    v{appVersion}
+                  </span>
+                </div>
+              </button>
+
               <div className="pt-2 border-t border-discord-darkest/60">
                 <button
                   onClick={async () => {
@@ -482,8 +541,18 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
             </div>
           </div>
 
-          <div className="text-[10px] text-discord-gray-500 px-2">
-            SquadSpace v1.0 • Private Friend Network
+          {/* App Version Sidebar Footer */}
+          <div className="pt-2 border-t border-discord-darkest/60 px-2 space-y-0.5 select-text">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-discord-gray-200">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>SquadSpace Desktop</span>
+            </div>
+            <div className="text-[11px] font-mono text-purple-300 font-bold">
+              v{appVersion}
+            </div>
+            <div className="text-[10px] text-discord-gray-500">
+              {window.electronAPI?.isElectron ? 'Windows x64 Native • Stable' : 'Web Client'}
+            </div>
           </div>
         </div>
 
@@ -497,6 +566,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
               {activeTab === 'voice' && 'Voice & Video Settings'}
               {activeTab === 'keybinds' && 'Keybinds & Shortcuts'}
               {activeTab === 'security' && 'Account Security'}
+              {activeTab === 'info' && 'Application Information & Updates'}
             </h2>
             <button
               onClick={onClose}
@@ -1235,6 +1305,94 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onL
                       </>
                     )}
                   </button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'info' && (
+              <div className="space-y-5 select-text">
+                {/* Main App Banner */}
+                <div className="bg-gradient-to-br from-purple-900/40 via-discord-sidebar to-[#1e1f22] p-5 rounded-xl border border-purple-500/30 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-discord-blurple flex items-center justify-center text-xs font-bold text-white shadow">
+                        🚀
+                      </div>
+                      <h3 className="text-base font-bold text-white">SquadSpace Desktop</h3>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono text-xs font-bold border border-emerald-500/30">
+                        v{appVersion}
+                      </span>
+                    </div>
+                    <p className="text-xs text-discord-gray-300">
+                      Ultra-low latency private voice, screen share & co-op gaming hangout.
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-discord-darkest/70 text-xs font-semibold text-purple-300 border border-purple-500/20">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      {window.electronAPI?.isElectron ? 'Windows x64 Native' : 'Web App'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Version & Update Status Card */}
+                <div className="bg-discord-sidebar p-4 rounded-xl border border-discord-darkest space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-discord-gray-200 uppercase tracking-wide">Release & Updates</h4>
+                      <p className="text-xs text-discord-gray-400 mt-0.5">
+                        GitHub Releases Stable Channel (ramkarthick125/squadspace)
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={checkingUpdate}
+                      onClick={handleManualCheckUpdate}
+                      className="px-4 py-1.5 bg-discord-blurple hover:bg-discord-blurple-hover disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {checkingUpdate ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Checking...</span>
+                        </>
+                      ) : (
+                        <>
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Check for Updates</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {updateMsg && (
+                    <div className="p-2.5 rounded-lg bg-discord-darkest/80 text-xs text-purple-300 border border-purple-500/20 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                      <span>{updateMsg}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* System Diagnostics & Build Details */}
+                <div className="bg-discord-sidebar p-4 rounded-xl border border-discord-darkest space-y-3">
+                  <h4 className="text-xs font-bold text-discord-gray-200 uppercase tracking-wide">Build & Pipeline Specifications</h4>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="p-3 rounded-lg bg-[#111214]/60 border border-discord-darkest/50 space-y-0.5">
+                      <span className="text-[10px] text-discord-gray-400 uppercase font-semibold">Installed Version</span>
+                      <p className="font-mono font-bold text-white text-sm">v{appVersion}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[#111214]/60 border border-discord-darkest/50 space-y-0.5">
+                      <span className="text-[10px] text-discord-gray-400 uppercase font-semibold">Auto-Update Mode</span>
+                      <p className="font-semibold text-emerald-400">In-Place Silent (Zero Setup Wizard)</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[#111214]/60 border border-discord-darkest/50 space-y-0.5">
+                      <span className="text-[10px] text-discord-gray-400 uppercase font-semibold">Graphics Pipeline</span>
+                      <p className="font-semibold text-white">60 FPS VSync Synchronized</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-[#111214]/60 border border-discord-darkest/50 space-y-0.5">
+                      <span className="text-[10px] text-discord-gray-400 uppercase font-semibold">3D Hangout Space</span>
+                      <p className="font-semibold text-purple-300">Party Animals 3D Lounge</p>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
