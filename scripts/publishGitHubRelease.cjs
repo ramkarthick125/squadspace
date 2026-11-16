@@ -25,17 +25,33 @@ if (!token) {
 
 const OWNER = 'ramkarthick125';
 const REPO = 'squadspace';
-const TAG = 'v1.0.4';
-const RELEASE_NAME = 'SquadSpace 1.0.4';
-const BODY = `## SquadSpace 1.0.4
+const TAG = 'v1.0.5';
+const RELEASE_NAME = 'SquadSpace 1.0.5 — Party Animals Stylized 3D Lounge Overhaul';
+const BODY = `## SquadSpace 1.0.5 — Party Animals Stylized 3D Lounge Overhaul
 
-### Voice Chat Ping Status & Stream Diagnostics Engine
-- **Voice Chat Ping & RTT Status**: Real-time round-trip latency display in both the sidebar voice quick-card and Voice Room header with color-coded signal quality.
-- **Peer-by-Peer Ping**: Displays individual latency to each peer participant in voice tiles and the docked participant strip.
-- **Stream Diagnostics "i" Button Overlay**: Full Stats for Nerds overlay on screen shares. Live Framerate gauge (target 60 FPS), Bitrate (Mbps), Resolution, Codec (AV1/VP9), Packet Loss, Jitter, Decode Latency, and Dropped Frames counter.
-- **Automated Lag & Pixelation Health Logger**: Continuously monitors streams in 1.5s intervals, automatically detecting and logging framerate drops, bitrate collapses, packet loss spikes, and decode bottlenecks with timestamps, probable causes, and recommendations.
-- **Diagnostic Log Export**: 1-click clipboard copy and text report export so users can review test sessions alone without needing an external observer.
-- **Persistent Disk Logging**: Automated streaming diagnostic events appended directly to \`squadspace-stream-diagnostics.log\`.
+### 🐾 Playable Stylized Mascot Characters
+- **5 Playable Animal Mascots**: Choose between 🐶 **Corgi Gamer**, 🐻 **Teddy Bear**, 🐕 **Shiba Inu**, 🐰 **Fluffy Bunny**, and 🐱 **Neon Kitty**.
+- **Physics Accessories**: Dynamic floppy ear wobbles and wagging tails animated in real-time, complete with neon gamer headsets and backward snapback caps.
+- **Matte Clay PBR Aesthetic**: Replaced primitive block models with cute, chubby stocky proportions and tactile matte silicone clay PBR shading.
+
+### 🛋️ Plush Stylized Environment & Props
+- **Genuine Khronos PBR Furniture**: Real glam velvet curved sofas (\`sofa.glb\`) and sheen club armchairs (\`chair.glb\`).
+- **Retro Arcade Cabinet**: Slanted cabinet with glowing "ARCADE" marquee, pixel game CRT screen, dual joysticks, colored action buttons, and glowing coin slots.
+- **Lounge Party Snacks**: Chunky bowl of fluffy popcorn, chill grape & orange soda cans, and pastel gamepads resting on the oak coffee table.
+- **Panoramic Night Skyline**: Giant glass window overlooking an illuminated city skyline with lit office grids, glowing antenna spires, and twinkling stars.
+
+### 🎮 Smooth Physics-Based Movement & Spring-Arm Camera
+- **Inertia & Acceleration Curve**: Weighted velocity lerping with physical stopping inertia.
+- **Furniture Collision Sliding**: Real physical collision detection against furniture hulls prevents avatars from clipping through couches and coffee tables.
+- **Spring-Arm Camera Damping**: Exponential damping follow camera (\`1.0 - Math.exp(-9.0 * delta)\`) completely eliminates camera snapping and stutter.
+
+### 🌐 True Multi-User WebRTC Synchronization
+- **Direct P2P DataChannels**: Real-time peer-to-peer avatar position, rotation, mascot choice, sitting, and emote synchronization with 0-5ms local network latency.
+- **Emerald Speaking Halos**: Avatars automatically light up with a glowing emerald speaking ring when talking in voice chat.
+
+### 💡 Interactive Lighting & Mascot Controls
+- **Room Mood Switcher**: Toggle between 🟣 **Cyber**, 🟠 **Warm**, and 🎬 **Cinema** lighting presets.
+- **Plush Mascot Quick-Bar**: 1-click floating dock to swap animal mascots on the fly.
 `;
 
 function apiRequest(method, endpoint, body) {

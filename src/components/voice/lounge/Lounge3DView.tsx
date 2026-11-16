@@ -18,6 +18,10 @@ import {
   Eye,
   Move,
   X,
+  Sparkles,
+  Sun,
+  Film,
+  Smile,
 } from 'lucide-react';
 import { Channel, UserProfile, VoiceParticipant } from '../../../types';
 import { LoungeScene } from './LoungeScene';
@@ -25,6 +29,16 @@ import { LoungeTV } from './LoungeTV';
 import { LoungeSeatManager, SEAT_DEFINITIONS, SeatDefinition } from './LoungeSeats';
 import { LoungeAvatar } from './LoungeAvatar';
 import { LoungePlayerController } from './LoungePlayerController';
+import { MascotType, MASCOT_PRESETS } from './LoungeMascotBuilder';
+import { webrtcManager } from '../../../lib/webrtcManager';
+
+const MASCOT_OPTIONS: Array<{ type: MascotType; label: string; icon: string; color: string; desc: string }> = [
+  { type: 'corgi', label: 'Corgi', icon: '🐶', color: '#e59846', desc: 'Chubby golden puppy with headset & wagging tail' },
+  { type: 'bear', label: 'Bear', icon: '🐻', color: '#935b33', desc: 'Fluffy brown teddy with snapback cap' },
+  { type: 'shiba', label: 'Shiba', icon: '🐕', color: '#ec9a42', desc: 'Happy chubby Shiba in pastel hoodie' },
+  { type: 'bunny', label: 'Bunny', icon: '🐰', color: '#f8fafc', desc: 'Round bunny with floppy ears & varsity jacket' },
+  { type: 'cat', label: 'Cat', icon: '🐱', color: '#8b5cf6', desc: 'Cyber kitty with glowing cat-ear headset' },
+];
 
 interface Lounge3DViewProps {
   channel: Channel;
@@ -74,6 +88,20 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
   const isAnimatingCameraRef = useRef<boolean>(false);
   const [activeEmote, setActiveEmote] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState<boolean>(false);
+  const [roomMood, setRoomMood] = useState<'cyber' | 'warm' | 'cinema'>('cyber');
+
+  // Mascot selection state (persisted in localStorage)
+  const [mascot, setMascot] = useState<MascotType>(() => {
+    try {
+      const saved = localStorage.getItem('squadspace_lounge_mascot') as MascotType;
+      if (saved && ['corgi', 'bear', 'shiba', 'bunny', 'cat'].includes(saved)) return saved;
+    } catch {}
+    return 'corgi';
+  });
+  const mascotRef = useRef<MascotType>(mascot);
+  useEffect(() => {
+    mascotRef.current = mascot;
+  }, [mascot]);
 
   // Modals
   const [showOutfitModal, setShowOutfitModal] = useState<boolean>(false);
@@ -87,12 +115,16 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
       if (saved) return JSON.parse(saved);
     } catch {}
     return {
-      shirt: '#0f766e', // Teal t-shirt (matching user screenshot)
-      pants: '#4d7c0f', // Olive green cargo shorts (matching user screenshot)
+      shirt: '#0f766e', // Teal t-shirt
+      pants: '#4d7c0f', // Olive green shorts
       hair: '#54321d',  // Chestnut brown hair
       skin: '#dca67a',  // Warm skin tone
     };
   });
+  const outfitRef = useRef(outfit);
+  useEffect(() => {
+    outfitRef.current = outfit;
+  }, [outfit]);
 
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
 
@@ -115,7 +147,7 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // 2. Camera: Positioned matching the user's reference third-person follow view (Image 1)
+    // 2. Camera: Positioned matching third-person follow view
     const camera = new THREE.PerspectiveCamera(46, width / height, 0.1, 90);
     camera.position.set(3.4, 3.6, 4.8);
     cameraRef.current = camera;
@@ -147,6 +179,7 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     const localAvatar = new LoungeAvatar({
       userId: currentUser?.id || 'local-player',
       displayName: currentUser?.displayName || currentUser?.username || 'You',
+      mascotType: mascotRef.current,
       shirtColor: outfit.shirt,
       pantsColor: outfit.pants,
       hairColor: outfit.hair,
@@ -163,31 +196,59 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     );
     playerControllerRef.current = playerController;
 
-    // Broadcast synchronization across local tabs and network
-    try {
-      const bc = new BroadcastChannel('squadspace_lounge_sync');
-      broadcastChannelRef.current = bc;
+    // Real multiplayer synchronization via WebRTC DataChannel + local BroadcastChannel fallback
+    const bc = new BroadcastChannel('squadspace_lounge_sync');
+    broadcastChannelRef.current = bc;
 
-      playerController.onStateChange = (state) => {
-        bc.postMessage({
-          type: 'avatar_state',
+    let lastNetworkEmit = 0;
+    const wasSittingRef = { current: false };
+    const wasSeatRef = { current: null as number | null };
+
+    playerController.onStateChange = (state) => {
+      const now = performance.now();
+      const isImportant =
+        state.isSitting !== wasSittingRef.current ||
+        Boolean(state.emote) ||
+        state.seatId !== wasSeatRef.current;
+
+      if (isImportant || now - lastNetworkEmit > 40) {
+        lastNetworkEmit = now;
+        wasSittingRef.current = state.isSitting;
+        wasSeatRef.current = state.seatId;
+
+        const packet = {
+          type: 'lounge_sync',
+          subType: 'avatar_state',
           userId: currentUser?.id || 'local-player',
           displayName: currentUser?.displayName || currentUser?.username || 'You',
-          outfit,
+          mascotType: mascotRef.current,
+          outfit: outfitRef.current,
           ...state,
-        });
-      };
+        };
 
-      bc.onmessage = (event) => {
-        const data = event.data;
-        if (!data || data.userId === (currentUser?.id || 'local-player')) return;
+        webrtcManager.sendCoopControl(null, packet);
+        try {
+          bc.postMessage(packet);
+        } catch {}
+      }
+    };
 
-        if (data.type === 'avatar_state') {
+    const handlePeerPacket = (data: any) => {
+      if (!data || data.userId === (currentUser?.id || 'local-player')) return;
+
+      const isLoungeSync = data.type === 'lounge_sync';
+      const isLegacyState = data.type === 'avatar_state';
+
+      if (isLoungeSync || isLegacyState) {
+        const subType = isLoungeSync ? data.subType : data.type;
+
+        if (subType === 'avatar_state') {
           let peerAvatar = seatManager.avatarMap.get(data.userId);
           if (!peerAvatar) {
             peerAvatar = new LoungeAvatar({
               userId: data.userId,
-              displayName: data.displayName,
+              displayName: data.displayName || 'Friend',
+              mascotType: data.mascotType || 'corgi',
               shirtColor: data.outfit?.shirt,
               pantsColor: data.outfit?.pants,
               hairColor: data.outfit?.hair,
@@ -196,6 +257,10 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
             });
             loungeScene.scene.add(peerAvatar.group);
             seatManager.avatarMap.set(data.userId, peerAvatar);
+          } else {
+            if (data.mascotType && peerAvatar.mascotType !== data.mascotType) {
+              peerAvatar.applyMascotAccessories(data.mascotType);
+            }
           }
 
           if (data.isSitting && data.seatId) {
@@ -205,22 +270,53 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
               peerAvatar.setSitting(true, seatDef.lookAt);
             }
           } else {
-            peerAvatar.setSitting(false);
-            peerAvatar.group.position.set(data.position[0], data.position[1], data.position[2]);
-            peerAvatar.group.rotation.y = data.rotationY;
+            if (peerAvatar.isSitting) {
+              peerAvatar.setSitting(false);
+            }
+            if (data.position) {
+              const targetPos = new THREE.Vector3(data.position[0], data.position[1], data.position[2]);
+              const dist = peerAvatar.group.position.distanceTo(targetPos);
+              if (dist > 3.0) {
+                peerAvatar.group.position.copy(targetPos);
+              } else if (dist > 0.02) {
+                peerAvatar.group.position.lerp(targetPos, 0.45);
+                if (!peerAvatar.currentEmote) {
+                  peerAvatar.playAnimation(data.isRunning ? 'Run' : 'Walk', 0.15);
+                }
+              } else if (!peerAvatar.currentEmote && !peerAvatar.isSitting) {
+                peerAvatar.playAnimation('Idle', 0.2);
+              }
+            }
+            if (typeof data.rotationY === 'number') {
+              peerAvatar.group.rotation.y = data.rotationY;
+            }
             if (data.emote) {
               peerAvatar.playEmote(data.emote);
             }
           }
-        } else if (data.type === 'avatar_emoji') {
+        } else if (subType === 'avatar_emoji') {
           const peerAvatar = seatManager.avatarMap.get(data.userId);
           if (peerAvatar) peerAvatar.spawnFloatingEmoji(data.emoji);
-        } else if (data.type === 'avatar_chat') {
+        } else if (subType === 'avatar_chat') {
           const peerAvatar = seatManager.avatarMap.get(data.userId);
           if (peerAvatar) peerAvatar.showSpeechBubble(data.message);
+        } else if (subType === 'mascot_change') {
+          const peerAvatar = seatManager.avatarMap.get(data.userId);
+          if (peerAvatar && data.mascotType) {
+            peerAvatar.applyMascotAccessories(data.mascotType);
+          }
         }
-      };
-    } catch {}
+      }
+    };
+
+    // Listen to incoming low-latency WebRTC DataChannel messages
+    const unsubWebRTC = webrtcManager.onCoopMessage((_peerId, packet) => {
+      handlePeerPacket(packet);
+    });
+
+    bc.onmessage = (event) => {
+      handlePeerPacket(event.data);
+    };
 
     // Sync remote participants
     if (currentUser) {
@@ -293,17 +389,15 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
       setNearestSeat(playerController.nearestSeat);
       setIsRunning(playerController.isRunning);
 
-      // Smooth Follow Mode: Translates camera along with the avatar's movement WITHOUT fighting orbit angle!
+      // Silky Smooth Spring-Arm Follow Mode: Exponential damping toward the avatar without fighting orbit angle!
       if (!isAnimatingCameraRef.current && cameraViewRef.current === 'follow') {
         const avatarPos = localAvatar.group.position;
-        const desiredTarget = new THREE.Vector3(avatarPos.x, avatarPos.y + 1.1, avatarPos.z);
-        const targetDelta = desiredTarget.clone().sub(controls.target);
-
-        // Translate camera smoothly as avatar moves
-        if (targetDelta.lengthSq() > 0.000001) {
-          controls.target.add(targetDelta);
-          camera.position.add(targetDelta);
-        }
+        const desiredTarget = new THREE.Vector3(avatarPos.x, avatarPos.y + 0.95, avatarPos.z);
+        const lerpFactor = 1.0 - Math.exp(-9.0 * delta); // 60-120fps framerate-independent spring damping
+        const prevTarget = controls.target.clone();
+        controls.target.lerp(desiredTarget, lerpFactor);
+        const deltaMoved = controls.target.clone().sub(prevTarget);
+        camera.position.add(deltaMoved);
       }
 
       controls.update();
@@ -313,6 +407,7 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
 
     return () => {
       cancelAnimationFrame(animId);
+      unsubWebRTC();
       window.removeEventListener('resize', handleResize);
       renderer.domElement.removeEventListener('mousemove', handlePointerMove);
       renderer.domElement.removeEventListener('click', handleClick);
@@ -348,6 +443,28 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     }
   }, [participants, currentUser]);
 
+  // Sync speaking halos on local avatar and peer avatars
+  useEffect(() => {
+    // 1. Local avatar speaking status
+    if (localAvatarRef.current) {
+      const localParticipant = participants.find((p) => p.user.id === currentUser?.id);
+      const isSpeaking = Boolean(localParticipant?.isSpeaking && !isMuted);
+      localAvatarRef.current.setSpeaking(isSpeaking);
+    }
+
+    // 2. Peer avatars speaking status
+    if (seatManagerRef.current) {
+      participants.forEach((p) => {
+        if (p.user.id !== currentUser?.id) {
+          const peerAvatar = seatManagerRef.current?.avatarMap.get(p.user.id);
+          if (peerAvatar) {
+            peerAvatar.setSpeaking(Boolean(p.isSpeaking && !p.isMuted));
+          }
+        }
+      });
+    }
+  }, [participants, isMuted, currentUser]);
+
   // Update local avatar outfit
   const handleUpdateOutfit = (newOutfit: typeof outfit) => {
     setOutfit(newOutfit);
@@ -361,6 +478,40 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
         newOutfit.hair,
         newOutfit.skin
       );
+    }
+  };
+
+  // Switch Mascot Character
+  const handleSelectMascot = (type: MascotType) => {
+    setMascot(type);
+    mascotRef.current = type;
+    try {
+      localStorage.setItem('squadspace_lounge_mascot', type);
+    } catch {}
+    if (localAvatarRef.current) {
+      localAvatarRef.current.applyMascotAccessories(type);
+    }
+
+    const packet = {
+      type: 'lounge_sync',
+      subType: 'mascot_change',
+      userId: currentUser?.id || 'local-player',
+      displayName: currentUser?.displayName || currentUser?.username || 'You',
+      mascotType: type,
+    };
+    webrtcManager.sendCoopControl(null, packet);
+    if (broadcastChannelRef.current) {
+      try {
+        broadcastChannelRef.current.postMessage(packet);
+      } catch {}
+    }
+  };
+
+  // Switch Room Mood Lighting
+  const handleSetMood = (mode: 'cyber' | 'warm' | 'cinema') => {
+    setRoomMood(mode);
+    if (sceneRef.current) {
+      sceneRef.current.setMood(mode);
     }
   };
 
@@ -445,12 +596,17 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     if (localAvatarRef.current) {
       localAvatarRef.current.spawnFloatingEmoji(emoji);
     }
+    const packet = {
+      type: 'lounge_sync',
+      subType: 'avatar_emoji',
+      userId: currentUser?.id || 'local-player',
+      emoji,
+    };
+    webrtcManager.sendCoopControl(null, packet);
     if (broadcastChannelRef.current) {
-      broadcastChannelRef.current.postMessage({
-        type: 'avatar_emoji',
-        userId: currentUser?.id || 'local-player',
-        emoji,
-      });
+      try {
+        broadcastChannelRef.current.postMessage(packet);
+      } catch {}
     }
   };
 
@@ -461,12 +617,17 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
     if (localAvatarRef.current) {
       localAvatarRef.current.showSpeechBubble(chatMessage.trim());
     }
+    const packet = {
+      type: 'lounge_sync',
+      subType: 'avatar_chat',
+      userId: currentUser?.id || 'local-player',
+      message: chatMessage.trim(),
+    };
+    webrtcManager.sendCoopControl(null, packet);
     if (broadcastChannelRef.current) {
-      broadcastChannelRef.current.postMessage({
-        type: 'avatar_chat',
-        userId: currentUser?.id || 'local-player',
-        message: chatMessage.trim(),
-      });
+      try {
+        broadcastChannelRef.current.postMessage(packet);
+      } catch {}
     }
     setChatMessage('');
   };
@@ -490,6 +651,49 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
 
         {/* Top Right Controls & View Switchers */}
         <div className="flex items-center gap-2 pointer-events-auto">
+          {/* Room Mood Switcher */}
+          <div className="flex items-center bg-black/75 backdrop-blur-md p-1 rounded-full border border-white/10 shadow-2xl">
+            <button
+              onClick={() => handleSetMood('cyber')}
+              title="Cyber Mood (Neon violet & vibrant rim lights)"
+              className={`px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                roomMood === 'cyber'
+                  ? 'bg-purple-600 text-white shadow-md'
+                  : 'text-gray-300 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-cyan-300" />
+              <span className="hidden sm:inline">Cyber</span>
+            </button>
+
+            <button
+              onClick={() => handleSetMood('warm')}
+              title="Warm Mood (Golden ambient cozy lighting)"
+              className={`px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                roomMood === 'warm'
+                  ? 'bg-amber-600 text-white shadow-md'
+                  : 'text-gray-300 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <Sun className="w-3.5 h-3.5 text-amber-300" />
+              <span className="hidden sm:inline">Warm</span>
+            </button>
+
+            <button
+              onClick={() => handleSetMood('cinema')}
+              title="Cinema Mood (Dimmed room with ultra-glowing TV)"
+              className={`px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                roomMood === 'cinema'
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'text-gray-300 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <Film className="w-3.5 h-3.5 text-indigo-300" />
+              <span className="hidden sm:inline">Cinema</span>
+            </button>
+          </div>
+
+          {/* Camera View Switcher */}
           <div className="flex items-center bg-black/75 backdrop-blur-md p-1 rounded-full border border-white/10 shadow-2xl">
             <button
               onClick={() => setViewMode('follow')}
@@ -549,6 +753,31 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
             <span>2D View</span>
           </button>
         </div>
+      </div>
+
+      {/* Floating Mascot Quick Selector Bar (Party Animals Mascot Dock) */}
+      <div className="absolute bottom-20 left-1/2 -translate-x-1/2 flex items-center gap-1 sm:gap-1.5 bg-black/85 backdrop-blur-xl px-3 py-1.5 rounded-full border border-purple-500/30 shadow-2xl z-10">
+        <span className="text-[10px] font-extrabold text-purple-300 uppercase tracking-wider pl-1 pr-1 hidden sm:inline">
+          Mascot:
+        </span>
+        {MASCOT_OPTIONS.map((m) => {
+          const isActive = mascot === m.type;
+          return (
+            <button
+              key={m.type}
+              onClick={() => handleSelectMascot(m.type)}
+              title={`${m.label}: ${m.desc}`}
+              className={`flex items-center gap-1 sm:gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                isActive
+                  ? 'bg-purple-600 text-white shadow-lg scale-105 ring-2 ring-purple-300'
+                  : 'text-gray-300 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              <span className="text-sm">{m.icon}</span>
+              <span className="text-[11px] font-semibold">{m.label}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Proximity Sit Prompt Pill: `[ E ] Sit` (Matching user screenshot exactly!) */}
@@ -795,7 +1024,7 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
                 <Shirt className="w-5 h-5 text-purple-400" />
-                <h3 className="font-bold text-base">Avatar Outfit & Style</h3>
+                <h3 className="font-bold text-base">Avatar Mascot & Style</h3>
               </div>
               <button
                 onClick={() => setShowOutfitModal(false)}
@@ -803,6 +1032,33 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
               >
                 <X className="w-5 h-5" />
               </button>
+            </div>
+
+            {/* Mascot Character Selection */}
+            <div className="mb-5">
+              <label className="text-xs text-gray-300 font-semibold mb-2 block">
+                Choose Mascot Character
+              </label>
+              <div className="grid grid-cols-5 gap-1.5">
+                {MASCOT_OPTIONS.map((m) => {
+                  const isActive = mascot === m.type;
+                  return (
+                    <button
+                      key={m.type}
+                      onClick={() => handleSelectMascot(m.type)}
+                      title={`${m.label}: ${m.desc}`}
+                      className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all cursor-pointer border ${
+                        isActive
+                          ? 'bg-purple-600/40 border-purple-400 text-white shadow-lg ring-1 ring-purple-300 scale-105'
+                          : 'bg-white/5 border-white/10 text-gray-400 hover:text-white hover:bg-white/10'
+                      }`}
+                    >
+                      <span className="text-xl mb-1">{m.icon}</span>
+                      <span className="text-[10px] font-bold">{m.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="mb-4">
