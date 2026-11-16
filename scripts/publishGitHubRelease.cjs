@@ -34,16 +34,13 @@ const BODY = `## SquadSpace 1.0.6 — Discord-Style Silent Auto-Updates
 - **Fast 1-Click Restart**: Clicking "Update ready — Restart" in the title bar seamlessly closes the app, applies differential updates in 1–2 seconds, and immediately launches the updated app.
 - **Background Update on Quit**: When closing SquadSpace normally with a pending update, the update installs silently so your next launch is automatically up-to-date.
 - **Clean Release Distribution**: Switched to a unified one-click NSIS setup installer (\`SquadSpace Setup 1.0.6.exe\`) with differential blockmaps, eliminating bulky standalone portable binaries and cluttered build folders.
-`;
-- **Spring-Arm Camera Damping**: Exponential damping follow camera (\`1.0 - Math.exp(-9.0 * delta)\`) completely eliminates camera snapping and stutter.
 
-### 🌐 True Multi-User WebRTC Synchronization
-- **Direct P2P DataChannels**: Real-time peer-to-peer avatar position, rotation, mascot choice, sitting, and emote synchronization with 0-5ms local network latency.
-- **Emerald Speaking Halos**: Avatars automatically light up with a glowing emerald speaking ring when talking in voice chat.
-
-### 💡 Interactive Lighting & Mascot Controls
-- **Room Mood Switcher**: Toggle between 🟣 **Cyber**, 🟠 **Warm**, and 🎬 **Cinema** lighting presets.
-- **Plush Mascot Quick-Bar**: 1-click floating dock to swap animal mascots on the fly.
+### 🐾 Party Animals 3D Lounge
+- **5 Playable Mascot Characters**: 🐶 Corgi Gamer, 🐻 Teddy Bear, 🐕 Shiba Inu, 🐰 Fluffy Bunny, and 🐱 Neon Kitty with wobbly physics ears and tails.
+- **Plush Stylized Lounge**: Genuine Khronos velvet sofas, sheen armchairs, Retro Arcade Cabinet, snacks, and panoramic skyline.
+- **Smooth Physics & Spring-Arm Camera**: Inertia settling, furniture collision sliding, and spring-arm follow camera.
+- **WebRTC Multiplayer Sync**: Low-latency DataChannel movement sync and emerald speaking halos.
+- **Interactive Lighting**: 🟣 Cyber, 🟠 Warm, and 🎬 Cinema moods.
 `;
 
 function apiRequest(method, endpoint, body) {
