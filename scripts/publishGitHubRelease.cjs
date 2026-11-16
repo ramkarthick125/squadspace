@@ -25,24 +25,16 @@ if (!token) {
 
 const OWNER = 'ramkarthick125';
 const REPO = 'squadspace';
-const TAG = 'v1.0.5';
-const RELEASE_NAME = 'SquadSpace 1.0.5 — Party Animals Stylized 3D Lounge Overhaul';
-const BODY = `## SquadSpace 1.0.5 — Party Animals Stylized 3D Lounge Overhaul
+const TAG = 'v1.0.6';
+const RELEASE_NAME = 'SquadSpace 1.0.6 — Discord-Style Silent Auto-Updates';
+const BODY = `## SquadSpace 1.0.6 — Discord-Style Silent Auto-Updates
 
-### 🐾 Playable Stylized Mascot Characters
-- **5 Playable Animal Mascots**: Choose between 🐶 **Corgi Gamer**, 🐻 **Teddy Bear**, 🐕 **Shiba Inu**, 🐰 **Fluffy Bunny**, and 🐱 **Neon Kitty**.
-- **Physics Accessories**: Dynamic floppy ear wobbles and wagging tails animated in real-time, complete with neon gamer headsets and backward snapback caps.
-- **Matte Clay PBR Aesthetic**: Replaced primitive block models with cute, chubby stocky proportions and tactile matte silicone clay PBR shading.
-
-### 🛋️ Plush Stylized Environment & Props
-- **Genuine Khronos PBR Furniture**: Real glam velvet curved sofas (\`sofa.glb\`) and sheen club armchairs (\`chair.glb\`).
-- **Retro Arcade Cabinet**: Slanted cabinet with glowing "ARCADE" marquee, pixel game CRT screen, dual joysticks, colored action buttons, and glowing coin slots.
-- **Lounge Party Snacks**: Chunky bowl of fluffy popcorn, chill grape & orange soda cans, and pastel gamepads resting on the oak coffee table.
-- **Panoramic Night Skyline**: Giant glass window overlooking an illuminated city skyline with lit office grids, glowing antenna spires, and twinkling stars.
-
-### 🎮 Smooth Physics-Based Movement & Spring-Arm Camera
-- **Inertia & Acceleration Curve**: Weighted velocity lerping with physical stopping inertia.
-- **Furniture Collision Sliding**: Real physical collision detection against furniture hulls prevents avatars from clipping through couches and coffee tables.
+### ⚡ Seamless Discord-Style Silent Auto-Updates
+- **Zero-Dialog Silent Installs**: Upgrades are applied completely in the background without prompting for directory choice, admin UAC modals, or interactive installer wizard dialogs.
+- **Fast 1-Click Restart**: Clicking "Update ready — Restart" in the title bar seamlessly closes the app, applies differential updates in 1–2 seconds, and immediately launches the updated app.
+- **Background Update on Quit**: When closing SquadSpace normally with a pending update, the update installs silently so your next launch is automatically up-to-date.
+- **Clean Release Distribution**: Switched to a unified one-click NSIS setup installer (\`SquadSpace Setup 1.0.6.exe\`) with differential blockmaps, eliminating bulky standalone portable binaries and cluttered build folders.
+`;
 - **Spring-Arm Camera Damping**: Exponential damping follow camera (\`1.0 - Math.exp(-9.0 * delta)\`) completely eliminates camera snapping and stutter.
 
 ### 🌐 True Multi-User WebRTC Synchronization
@@ -161,10 +153,6 @@ async function main() {
     {
       path: path.join(__dirname, '..', 'release', 'latest.yml'),
       type: 'text/yaml',
-    },
-    {
-      path: path.join(__dirname, '..', 'release', `SquadSpace ${VERSION}.exe`),
-      type: 'application/octet-stream',
     },
   ];
 

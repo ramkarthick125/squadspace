@@ -7,6 +7,7 @@ import { useServerStore } from '../../store/useServerStore';
 export const DiscordTitleBar: React.FC = () => {
   const isElectron = Boolean(window.electronAPI?.isElectron);
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<{
     status: 'checking' | 'available' | 'up-to-date' | 'downloading' | 'downloaded' | 'error';
     version?: string;
@@ -83,12 +84,25 @@ export const DiscordTitleBar: React.FC = () => {
         <div style={{ WebkitAppRegion: 'no-drag' } as any}>
           <button
             type="button"
-            onClick={() => window.electronAPI?.restartAndInstallUpdate?.()}
+            disabled={isRestarting}
+            onClick={() => {
+              setIsRestarting(true);
+              window.electronAPI?.restartAndInstallUpdate?.();
+            }}
             title="Click to restart and apply update now"
-            className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-[10px] shadow transition cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-75 text-white font-medium text-[10px] shadow transition cursor-pointer"
           >
-            <Sparkles className="w-3 h-3" />
-            <span>Update ready — Restart</span>
+            {isRestarting ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>Updating & Restarting...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-3 h-3" />
+                <span>Update ready — Restart</span>
+              </>
+            )}
           </button>
         </div>
       )}

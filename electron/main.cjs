@@ -533,7 +533,20 @@ ipcMain.handle('updater:check', async () => {
 
 ipcMain.on('updater:restart-and-install', () => {
   if (autoUpdater) {
-    autoUpdater.quitAndInstall(false, true);
+    console.log('[AutoUpdater] Applying update silently and restarting (Discord style)...');
+    isQuitting = true;
+    try {
+      BrowserWindow.getAllWindows().forEach((win) => {
+        try {
+          win.removeAllListeners('close');
+          win.destroy();
+        } catch {}
+      });
+    } catch {}
+    setImmediate(() => {
+      // isSilent: true (never show installer GUI), isForceRunAfter: true (instantly restart updated app)
+      autoUpdater.quitAndInstall(true, true);
+    });
   }
 });
 
