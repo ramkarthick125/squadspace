@@ -147,14 +147,15 @@ async function main() {
 
   const uploadUrl = release.upload_url;
   const existingAssets = release.assets || [];
+  const VERSION = TAG.replace(/^v/, '');
 
   const filesToUpload = [
     {
-      path: path.join(__dirname, '..', 'release', 'SquadSpace Setup 1.0.4.exe'),
+      path: path.join(__dirname, '..', 'release', `SquadSpace Setup ${VERSION}.exe`),
       type: 'application/octet-stream',
     },
     {
-      path: path.join(__dirname, '..', 'release', 'SquadSpace Setup 1.0.4.exe.blockmap'),
+      path: path.join(__dirname, '..', 'release', `SquadSpace Setup ${VERSION}.exe.blockmap`),
       type: 'application/octet-stream',
     },
     {
@@ -162,7 +163,7 @@ async function main() {
       type: 'text/yaml',
     },
     {
-      path: path.join(__dirname, '..', 'release', 'SquadSpace 1.0.4.exe'),
+      path: path.join(__dirname, '..', 'release', `SquadSpace ${VERSION}.exe`),
       type: 'application/octet-stream',
     },
   ];
