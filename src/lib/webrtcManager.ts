@@ -1370,14 +1370,20 @@ class WebRTCManager {
       });
     }
 
-    // Also send via signaling channel for guaranteed delivery
-    this.sendSignal({
-      type: 'coop-control',
-      targetId: targetId || undefined,
-      senderId: this.myUserId,
-      channelId: this.currentChannelId || '',
-      payload,
-    });
+    // Only send via signaling channel for non-movement events
+    // (Avoid flooding Supabase WebSockets with high-frequency avatar movement ticks)
+    const isHighFreqMovement =
+      (payload?.type === 'lounge_sync' && payload?.subType === 'avatar_state') ||
+      payload?.type === 'avatar_state';
+    if (!isHighFreqMovement) {
+      this.sendSignal({
+        type: 'coop-control',
+        targetId: targetId || undefined,
+        senderId: this.myUserId,
+        channelId: this.currentChannelId || '',
+        payload,
+      });
+    }
 
     return sentViaDataChannel;
   }

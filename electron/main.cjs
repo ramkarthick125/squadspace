@@ -12,6 +12,9 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
+const http = require('http');
+const { spawn } = require('child_process');
 const coopHost = require('./coopHost.cjs');
 const nativeHotkey = require('./nativeHotkey.cjs');
 
@@ -443,12 +446,310 @@ ipcMain.handle('lounge:load-model', async (_event, modelName) => {
 });
 
 // 5. GitHub Auto-Updater (Automated seamless updates from ramkarthick125/squadspace)
+const isPortable = Boolean(
+  process.env.PORTABLE_EXECUTABLE_FILE ||
+  process.env.PORTABLE_EXECUTABLE_DIR
+);
+const portableExePath = process.env.PORTABLE_EXECUTABLE_FILE || null;
+
+let isCheckingPortableUpdate = false;
+let isDownloadingPortableUpdate = false;
+let downloadedPortableUpdatePath = null;
+let downloadedPortableVersion = null;
+
+function isNewerVersion(remote, current) {
+  if (!remote || !current) return false;
+  const parse = (v) =>
+    String(v)
+      .replace(/^v/i, '')
+      .split('.')
+      .map((n) => parseInt(n, 10) || 0);
+  const r = parse(remote);
+  const c = parse(current);
+  for (let i = 0; i < Math.max(r.length, c.length); i++) {
+    const rVal = r[i] || 0;
+    const cVal = c[i] || 0;
+    if (rVal > cVal) return true;
+    if (rVal < cVal) return false;
+  }
+  return false;
+}
+
+function fetchText(urlStr, headers = {}) {
+  return new Promise((resolve, reject) => {
+    function get(currUrl, count = 0) {
+      if (count > 5) return reject(new Error('Too many redirects'));
+      const parsed = new URL(currUrl);
+      const mod = parsed.protocol === 'http:' ? http : https;
+      const req = mod.get(currUrl, {
+        headers: {
+          'User-Agent': 'SquadSpace-Updater',
+          'Accept': '*/*',
+          ...headers,
+        },
+      }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          const nextUrl = new URL(res.headers.location, currUrl).href;
+          return get(nextUrl, count + 1);
+        }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+        }
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => resolve(data));
+      });
+      req.on('error', reject);
+    }
+    get(urlStr);
+  });
+}
+
+async function fetchJson(urlStr, headers = {}) {
+  const text = await fetchText(urlStr, headers);
+  return JSON.parse(text);
+}
+
+function downloadBinaryFile(urlStr, destPath, onProgress) {
+  return new Promise((resolve, reject) => {
+    function get(currUrl, count = 0) {
+      if (count > 5) return reject(new Error('Too many redirects'));
+      const parsed = new URL(currUrl);
+      const mod = parsed.protocol === 'http:' ? http : https;
+      const req = mod.get(currUrl, {
+        headers: {
+          'User-Agent': 'SquadSpace-Updater',
+          'Accept': 'application/octet-stream,*/*',
+        },
+      }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          const nextUrl = new URL(res.headers.location, currUrl).href;
+          return get(nextUrl, count + 1);
+        }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
+        }
+        const total = parseInt(res.headers['content-length'] || '0', 10);
+        let downloaded = 0;
+        let lastPercent = -1;
+        const fileStream = fs.createWriteStream(destPath);
+        res.on('data', (chunk) => {
+          downloaded += chunk.length;
+          if (total > 0 && onProgress) {
+            const percent = Math.min(100, Math.round((downloaded / total) * 100));
+            if (percent !== lastPercent) {
+              lastPercent = percent;
+              onProgress(percent);
+            }
+          }
+        });
+        res.pipe(fileStream);
+        fileStream.on('finish', () => {
+          fileStream.close(() => resolve(destPath));
+        });
+        fileStream.on('error', (err) => {
+          try { fs.unlinkSync(destPath); } catch {}
+          reject(err);
+        });
+      });
+      req.on('error', reject);
+    }
+    get(urlStr);
+  });
+}
+
+async function checkPortableUpdate() {
+  if (isCheckingPortableUpdate || isDownloadingPortableUpdate) return;
+  isCheckingPortableUpdate = true;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('updater:status', { status: 'checking' });
+  }
+
+  try {
+    let latestVersion = null;
+    let downloadUrl = null;
+
+    // 1. Try GitHub Releases API first
+    try {
+      const releaseData = await fetchJson('https://api.github.com/repos/ramkarthick125/squadspace/releases/latest');
+      if (releaseData && releaseData.tag_name) {
+        latestVersion = String(releaseData.tag_name).replace(/^v/i, '').trim();
+        if (Array.isArray(releaseData.assets)) {
+          const portableAsset = releaseData.assets.find(
+            (a) => a.name === 'SquadSpace.exe' || (a.name.toLowerCase().endsWith('.exe') && !a.name.toLowerCase().includes('setup'))
+          );
+          if (portableAsset && portableAsset.browser_download_url) {
+            downloadUrl = portableAsset.browser_download_url;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[PortableUpdater] GitHub API query notice:', e.message);
+    }
+
+    // 2. Fallback to latest.yml from GitHub Releases CDN (no rate limits)
+    if (!latestVersion) {
+      try {
+        const ymlText = await fetchText('https://github.com/ramkarthick125/squadspace/releases/latest/download/latest.yml');
+        const match = ymlText.match(/version:\s*([^\s\r\n]+)/);
+        if (match) {
+          latestVersion = match[1].trim();
+        }
+      } catch (e) {
+        console.warn('[PortableUpdater] latest.yml query notice:', e.message);
+      }
+    }
+
+    if (!downloadUrl && latestVersion) {
+      downloadUrl = `https://github.com/ramkarthick125/squadspace/releases/download/v${latestVersion}/SquadSpace.exe`;
+    }
+
+    if (!latestVersion || !downloadUrl) {
+      console.log('[PortableUpdater] Could not retrieve release information.');
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('updater:status', { status: 'up-to-date', version: app.getVersion() });
+      }
+      return;
+    }
+
+    const currentVersion = app.getVersion();
+    if (!isNewerVersion(latestVersion, currentVersion)) {
+      console.log(`[PortableUpdater] SquadSpace is up to date (Current: ${currentVersion}, Latest: ${latestVersion})`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('updater:status', { status: 'up-to-date', version: currentVersion });
+      }
+      return;
+    }
+
+    console.log(`[PortableUpdater] New portable update found: v${latestVersion} (Current: v${currentVersion})`);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater:status', {
+        status: 'available',
+        version: latestVersion,
+      });
+    }
+
+    isDownloadingPortableUpdate = true;
+    const tempExe = path.join(app.getPath('temp'), `squadspace-update-${latestVersion}.exe`);
+    await downloadBinaryFile(downloadUrl, tempExe, (percent) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('updater:status', {
+          status: 'downloading',
+          percent,
+        });
+      }
+    });
+
+    const stats = fs.statSync(tempExe);
+    if (stats.size < 5 * 1024 * 1024) {
+      throw new Error(`Downloaded update is too small (${stats.size} bytes), likely corrupted`);
+    }
+
+    downloadedPortableUpdatePath = tempExe;
+    downloadedPortableVersion = latestVersion;
+    console.log(`[PortableUpdater] Successfully downloaded portable update: ${tempExe}`);
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater:status', {
+        status: 'downloaded',
+        version: latestVersion,
+      });
+    }
+  } catch (err) {
+    console.error('[PortableUpdater] Update error:', err);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('updater:status', {
+        status: 'error',
+        error: err?.message || String(err),
+      });
+    }
+  } finally {
+    isCheckingPortableUpdate = false;
+    isDownloadingPortableUpdate = false;
+  }
+}
+
+function applyPortableUpdate(shouldRestart = true) {
+  if (!isPortable || !portableExePath || !downloadedPortableUpdatePath || !fs.existsSync(downloadedPortableUpdatePath)) {
+    return false;
+  }
+
+  console.log(`[PortableUpdater] Applying in-place update (Restart: ${shouldRestart}) to:`, portableExePath);
+  isQuitting = true;
+
+  const batPath = path.join(app.getPath('temp'), 'squadspace-self-update.bat');
+  const batContent = `@echo off
+chcp 65001 > nul
+set "TARGET=%~1"
+set "UPDATE=%~2"
+set "SHOULD_RESTART=%~3"
+
+:: Wait for old SquadSpace process to release file lock
+timeout /t 1 /nobreak > nul
+
+:retry_loop
+move /y "%UPDATE%" "%TARGET%" > nul 2>&1
+if errorlevel 1 (
+    timeout /t 1 /nobreak > nul
+    goto retry_loop
+)
+
+if "%SHOULD_RESTART%"=="1" (
+    start "" "%TARGET%"
+)
+
+del "%~f0" > nul 2>&1
+`;
+
+  try {
+    fs.writeFileSync(batPath, batContent, 'utf8');
+    const child = spawn('cmd.exe', ['/c', batPath, portableExePath, downloadedPortableUpdatePath, shouldRestart ? '1' : '0'], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    child.unref();
+
+    BrowserWindow.getAllWindows().forEach((win) => {
+      try {
+        win.removeAllListeners('close');
+        win.destroy();
+      } catch {}
+    });
+
+    app.exit(0);
+    return true;
+  } catch (err) {
+    console.error('[PortableUpdater] Error executing self-update script:', err);
+    return false;
+  }
+}
+
 function setupAutoUpdater() {
-  if (!autoUpdater) return;
   if (!app.isPackaged) {
     console.log('[AutoUpdater] Skipped in development mode');
     return;
   }
+
+  // 1. Portable Executable Mode: In-Place Silent Self-Updating (Discord-style)
+  if (isPortable) {
+    console.log('[PortableUpdater] Initialized portable mode for:', portableExePath);
+    setTimeout(() => {
+      checkPortableUpdate().catch((err) => {
+        console.warn('[PortableUpdater] Initial check notice:', err?.message || err);
+      });
+    }, 4000);
+
+    setInterval(() => {
+      checkPortableUpdate().catch((err) => {
+        console.warn('[PortableUpdater] Interval check notice:', err?.message || err);
+      });
+    }, 30 * 60 * 1000);
+    return;
+  }
+
+  // 2. NSIS Installed Setup Mode: Standard electron-updater with silent background installation
+  if (!autoUpdater) return;
 
   try {
     autoUpdater.autoDownload = true;
@@ -522,7 +823,12 @@ function setupAutoUpdater() {
 }
 
 ipcMain.handle('updater:check', async () => {
-  if (!autoUpdater || !app.isPackaged) return { status: 'dev-mode' };
+  if (!app.isPackaged) return { status: 'dev-mode' };
+  if (isPortable) {
+    checkPortableUpdate().catch(() => {});
+    return { status: 'checking', isPortable: true };
+  }
+  if (!autoUpdater) return { status: 'error', error: 'No updater' };
   try {
     const res = await autoUpdater.checkForUpdates();
     return { status: 'success', updateInfo: res?.updateInfo };
@@ -532,6 +838,11 @@ ipcMain.handle('updater:check', async () => {
 });
 
 ipcMain.on('updater:restart-and-install', () => {
+  if (isPortable) {
+    const applied = applyPortableUpdate(true);
+    if (applied) return;
+  }
+
   if (autoUpdater) {
     console.log('[AutoUpdater] Applying update silently and restarting (Discord style)...');
     isQuitting = true;
@@ -599,6 +910,10 @@ if (!gotTheLock) {
 }
 
 app.on('will-quit', () => {
+  if (isPortable && downloadedPortableUpdatePath && fs.existsSync(downloadedPortableUpdatePath)) {
+    // Silently apply downloaded update on quit (without restarting) so next run is automatically updated
+    applyPortableUpdate(false);
+  }
   stopInputHook();
   coopHost.panicDisconnectAll();
   globalShortcut.unregisterAll();

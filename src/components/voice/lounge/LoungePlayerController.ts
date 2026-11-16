@@ -39,6 +39,10 @@ export class LoungePlayerController {
   public isSitting: boolean = false;
   public currentSeatId: number | null = null;
   public isRunning: boolean = false;
+  private lastEmittedPos: THREE.Vector3 = new THREE.Vector3();
+  private lastEmittedRot: number = 0;
+  private lastEmitTime: number = 0;
+  private wasMovingBefore: boolean = false;
 
   public onStateChange?: (state: {
     position: [number, number, number];
@@ -285,9 +289,24 @@ export class LoungePlayerController {
     if (allowX) currentPos.x = clampedX;
     if (allowZ) currentPos.z = clampedZ;
 
-    if (isMoving || this.velocity.lengthSq() > 0.001) {
+    const isCurrentlyActive = isMoving || this.velocity.lengthSq() > 0.001;
+    const hasMoved =
+      currentPos.distanceToSquared(this.lastEmittedPos) > 0.0016 ||
+      Math.abs(this.avatar.group.rotation.y - this.lastEmittedRot) > 0.04;
+    const now = performance.now();
+
+    if (isCurrentlyActive && hasMoved && (now - this.lastEmitTime > 55)) {
+      this.lastEmitTime = now;
+      this.lastEmittedPos.copy(currentPos);
+      this.lastEmittedRot = this.avatar.group.rotation.y;
+      this.emitState();
+    } else if (!isCurrentlyActive && this.wasMovingBefore) {
+      // Stopped moving: emit one final settle packet
+      this.lastEmittedPos.copy(currentPos);
+      this.lastEmittedRot = this.avatar.group.rotation.y;
       this.emitState();
     }
+    this.wasMovingBefore = isCurrentlyActive;
 
     // 2. Check proximity to nearest seat for 'E' prompt
     let closestSeat: SeatDefinition | null = null;

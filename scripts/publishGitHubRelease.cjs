@@ -25,22 +25,27 @@ if (!token) {
 
 const OWNER = 'ramkarthick125';
 const REPO = 'squadspace';
-const TAG = 'v1.0.6';
-const RELEASE_NAME = 'SquadSpace 1.0.6 — Discord-Style Silent Auto-Updates';
-const BODY = `## SquadSpace 1.0.6 — Discord-Style Silent Auto-Updates
+const TAG = 'v1.0.7';
+const RELEASE_NAME = 'SquadSpace 1.0.7 — Portable In-Place Auto-Update & 60 FPS Optimization';
+const BODY = `## SquadSpace 1.0.7 — Portable In-Place Auto-Update & 60 FPS Optimization
 
-### ⚡ Seamless Discord-Style Silent Auto-Updates
-- **Zero-Dialog Silent Installs**: Upgrades are applied completely in the background without prompting for directory choice, admin UAC modals, or interactive installer wizard dialogs.
-- **Fast 1-Click Restart**: Clicking "Update ready — Restart" in the title bar seamlessly closes the app, applies differential updates in 1–2 seconds, and immediately launches the updated app.
-- **Background Update on Quit**: When closing SquadSpace normally with a pending update, the update installs silently so your next launch is automatically up-to-date.
-- **Clean Release Distribution**: Switched to a unified one-click NSIS setup installer (\`SquadSpace Setup 1.0.6.exe\`) with differential blockmaps, eliminating bulky standalone portable binaries and cluttered build folders.
+### ⚡ Seamless Discord-Style Portable Auto-Updates
+- **In-Place Portable Executable Self-Update**: The portable executable (\`SquadSpace.exe\`) now updates itself in-place without triggering the Windows installer setup wizard or prompting the user to install. Clicking "Update ready — Restart" silently swaps the running portable binary and instantly relaunches into the updated version!
+- **Zero-Setup Hassle**: Users who prefer running the standalone portable \`SquadSpace.exe\` keep it in their preferred folder with automatic silent updates.
+- **Custom Install Location for Setup**: For users choosing the full installer (\`SquadSpace Setup 1.0.7.exe\`), the installer prompts for an installation directory with a folder browser.
+
+### 🚀 60 FPS Zero-Lag Rendering & Networking Optimization
+- **Three.js Shadow Map Pruning**: Static sofas and armchairs receive shadows without casting them, removing over 1,200,000 redundant vertices from the shadow pass every frame.
+- **Material Batch Caching**: Furniture submesh materials are cached and shared across instances, drastically reducing GPU draw calls.
+- **High-DPI Display Scaling Lock**: Pixel ratio is locked to 1.0 to guarantee smooth 60 FPS performance without throttling on 2K/4K and scaled Windows displays.
+- **WebSocket Signaling Flood Prevention**: High-frequency avatar movement packets stream exclusively over peer WebRTC DataChannels and local BroadcastChannels, completely eliminating Supabase Realtime WebSocket message spam.
+- **Position Deadband & 55ms Network Throttling**: Stationary and micro-movements are filtered out to maintain a stable, responsive event loop.
 
 ### 🐾 Party Animals 3D Lounge
-- **5 Playable Mascot Characters**: 🐶 Corgi Gamer, 🐻 Teddy Bear, 🐕 Shiba Inu, 🐰 Fluffy Bunny, and 🐱 Neon Kitty with wobbly physics ears and tails.
-- **Plush Stylized Lounge**: Genuine Khronos velvet sofas, sheen armchairs, Retro Arcade Cabinet, snacks, and panoramic skyline.
+- **5 Playable Mascot Characters**: 🐶 Corgi Gamer, 🐻 Teddy Bear, 🐕 Shiba Inu, 🐰 Fluffy Bunny, and 🐱 Neon Kitty with bouncy physics ears, wagging tails, headsets, and snapbacks.
+- **Plush Stylized Lounge**: Genuine Khronos velvet sofas, sheen armchairs, Retro Arcade Cabinet, snack tables, and cinema screen.
 - **Smooth Physics & Spring-Arm Camera**: Inertia settling, furniture collision sliding, and spring-arm follow camera.
-- **WebRTC Multiplayer Sync**: Low-latency DataChannel movement sync and emerald speaking halos.
-- **Interactive Lighting**: 🟣 Cyber, 🟠 Warm, and 🎬 Cinema moods.
+- **Multiplayer Synchronisation**: Real-time DataChannel movement sync and emerald speaking halos.
 `;
 
 function apiRequest(method, endpoint, body) {
@@ -145,6 +150,10 @@ async function main() {
     },
     {
       path: path.join(__dirname, '..', 'release', `SquadSpace Setup ${VERSION}.exe.blockmap`),
+      type: 'application/octet-stream',
+    },
+    {
+      path: path.join(__dirname, '..', 'release', 'SquadSpace.exe'),
       type: 'application/octet-stream',
     },
     {

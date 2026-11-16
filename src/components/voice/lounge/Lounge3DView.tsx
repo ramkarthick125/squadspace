@@ -141,7 +141,7 @@ export const Lounge3DView: React.FC<Lounge3DViewProps> = ({
       powerPreference: 'high-performance',
     });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.0)); // Locked to 1.0 to guarantee smooth 60 FPS on high-DPI displays
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.25;
     container.appendChild(renderer.domElement);

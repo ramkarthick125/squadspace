@@ -41,12 +41,12 @@ export class LoungeScene {
     this.ambientLight = new THREE.AmbientLight(0x382250, 1.6);
     this.scene.add(this.ambientLight);
 
-    // 2. Ceiling Warm Key Light with soft PCF shadow maps
+    // 2. Ceiling Warm Key Light with soft PCF shadow maps (optimized 1024x1024)
     this.dirLight = new THREE.DirectionalLight(0xfff5e6, 1.25);
     this.dirLight.position.set(-2, 9, 3);
     this.dirLight.castShadow = true;
-    this.dirLight.shadow.mapSize.width = 2048;
-    this.dirLight.shadow.mapSize.height = 2048;
+    this.dirLight.shadow.mapSize.width = 1024;
+    this.dirLight.shadow.mapSize.height = 1024;
     this.dirLight.shadow.camera.near = 0.5;
     this.dirLight.shadow.camera.far = 25;
     this.dirLight.shadow.camera.left = -9;
@@ -1040,6 +1040,7 @@ export class LoungeScene {
     try {
       // 1. Load Real Glam Velvet Sofa (Khronos Group PBR model)
       const sofaGLTF = await loader.loadModel('/models/sofa.glb');
+      const sofaMatCache = new Map<string, THREE.MeshStandardMaterial>();
 
       const spawnSofa = (x: number, z: number, rotY: number, tintColor?: number) => {
         const sofa = SkeletonUtils.clone(sofaGLTF.scene);
@@ -1050,11 +1051,16 @@ export class LoungeScene {
         sofa.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
             const mesh = child as THREE.Mesh;
-            mesh.castShadow = true;
+            mesh.castShadow = false; // Optimized: static furniture receives shadows, does not cast
             mesh.receiveShadow = true;
             if (tintColor && mesh.material && (mesh.material as THREE.MeshStandardMaterial).isMeshStandardMaterial) {
-              const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
-              mat.color.set(tintColor);
+              const cacheKey = `sofa_${tintColor}`;
+              let mat = sofaMatCache.get(cacheKey);
+              if (!mat) {
+                mat = (mesh.material as THREE.MeshStandardMaterial).clone();
+                mat.color.set(tintColor);
+                sofaMatCache.set(cacheKey, mat);
+              }
               mesh.material = mat;
             }
           }
@@ -1080,6 +1086,7 @@ export class LoungeScene {
     try {
       // 2. Load Real Sheen Armchairs (Khronos Group PBR model)
       const chairGLTF = await loader.loadModel('/models/chair.glb');
+      const chairMatCache = new Map<string, THREE.MeshStandardMaterial>();
 
       const spawnChair = (x: number, z: number, rotY: number, tintColor?: number) => {
         const chair = SkeletonUtils.clone(chairGLTF.scene);
@@ -1090,11 +1097,16 @@ export class LoungeScene {
         chair.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
             const mesh = child as THREE.Mesh;
-            mesh.castShadow = true;
+            mesh.castShadow = false; // Optimized: static armchairs receive shadows, do not cast
             mesh.receiveShadow = true;
             if (tintColor && mesh.material && (mesh.material as THREE.MeshStandardMaterial).isMeshStandardMaterial) {
-              const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
-              mat.color.set(tintColor);
+              const cacheKey = `chair_${tintColor}`;
+              let mat = chairMatCache.get(cacheKey);
+              if (!mat) {
+                mat = (mesh.material as THREE.MeshStandardMaterial).clone();
+                mat.color.set(tintColor);
+                chairMatCache.set(cacheKey, mat);
+              }
               mesh.material = mat;
             }
           }
